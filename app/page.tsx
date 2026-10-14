@@ -12,7 +12,6 @@ const MapComponent = dynamic(() => import('@/components/MapComponent'), {
   loading: () => <div className="h-full w-full bg-zinc-950 flex items-center justify-center text-xs text-zinc-500">Načítání mapy...</div>
 })
 
-// Předdefinované barvy pro špendlíky
 const PRESET_COLORS = [
   { label: 'Fialová (Výchozí)', hex: '#a855f7' },
   { label: 'Červená (Urgentní)', hex: '#ef4444' },
@@ -21,7 +20,25 @@ const PRESET_COLORS = [
   { label: 'Žlutá (Čeká se)', hex: '#eab308' }
 ]
 
-const emptyForm: Omit<LocationItem, 'id' | 'lat' | 'lng'> = {
+type FormDataState = {
+  barva: string
+  ic_rc: string
+  nazev: string
+  adresa: string
+  firma: string
+  sleva: string
+  hwb: string
+  kontaktni_osoba: string
+  kontaktni_telefon: string
+  co_jsem_delal: string
+  kdy_delal: string
+  co_chci: string
+  kdy_chci: string
+  moje_poznamky: string
+  moje_fotka: string
+}
+
+const emptyForm: FormDataState = {
   barva: '#a855f7',
   ic_rc: '',
   nazev: '',
@@ -45,7 +62,6 @@ export default function Home() {
   const [locations, setLocations] = useState<LocationItem[]>([])
   const [search, setSearch] = useState('')
   
-  // Stavy pro řazení a filtraci
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name' | 'date_wanted'>('newest')
   const [filterColor, setFilterColor] = useState<string>('all')
   
@@ -53,7 +69,7 @@ export default function Home() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [formData, setFormData] = useState(emptyForm)
+  const [formData, setFormData] = useState<FormDataState>(emptyForm)
 
   const [addressSuggestions, setAddressSuggestions] = useState<any[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -96,7 +112,9 @@ export default function Home() {
         const data = await res.json()
         setAddressSuggestions(data)
         setShowSuggestions(true)
-      } catch (e) { console.error(e) }
+      } catch (e) { 
+        console.error(e) 
+      }
     }, 500)
   }
 
@@ -190,10 +208,8 @@ export default function Home() {
     setIsModalOpen(true)
   }
 
-  // --- LOGIKA PRO ŘAZENÍ A FILTROVÁNÍ ---
   let processedLocations = [...locations]
 
-  // 1. Filtrace textem (Hledání)
   if (search) {
     processedLocations = processedLocations.filter(l => 
       (l.nazev?.toLowerCase() || '').includes(search.toLowerCase()) ||
@@ -201,12 +217,10 @@ export default function Home() {
     )
   }
 
-  // 2. Filtrace podle barvy
   if (filterColor !== 'all') {
     processedLocations = processedLocations.filter(l => l.barva === filterColor)
   }
 
-  // 3. Řazení
   processedLocations.sort((a, b) => {
     if (sortBy === 'name') {
       return (a.nazev || '').localeCompare(b.nazev || '')
@@ -215,14 +229,10 @@ export default function Home() {
       return (a.kdy_chci || '').localeCompare(b.kdy_chci || '')
     }
     if (sortBy === 'oldest') {
-      // Předpokládáme, že ID v poli locations přichází seřazené z databáze (dle času přidání)
-      // Pro bezpečnější řazení by locations mělo mít atribut created_at
-      return a.id.localeCompare(b.id) 
+      return a.id.localeCompare(b.id)
     }
-    // Default: 'newest'
     return b.id.localeCompare(a.id)
   })
-
 
   if (loading) {
     return (
@@ -238,7 +248,6 @@ export default function Home() {
     <div className="relative h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100 font-sans">
       
       <div className="absolute inset-0 z-0">
-        {/* Do mapy posíláme jen VYFILTROVANÁ data, aby na mapě svítily jen ty špendlíky, které hledáme */}
         <MapComponent locations={processedLocations} onSelectLocation={handleEdit} />
       </div>
 
@@ -271,9 +280,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Nástroje: Hledání, Filtr Barvy, Řazení */}
         <div className="p-3 border-b border-zinc-800/50 space-y-2 shrink-0">
-          
           <div className="relative">
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-zinc-500" />
             <input 
@@ -325,8 +332,6 @@ export default function Home() {
           ) : (
             processedLocations.map((loc) => (
               <div key={loc.id} className="p-3 bg-zinc-950/60 rounded-xl border border-zinc-800/80 hover:border-zinc-700 transition-all flex gap-3 relative overflow-hidden group">
-                
-                {/* Obarvený indikátor vlevo */}
                 <div className="absolute left-0 top-0 bottom-0 w-1.5 opacity-80" style={{ backgroundColor: loc.barva || '#a855f7' }}></div>
 
                 <div className="flex-1 pl-1">
@@ -339,7 +344,6 @@ export default function Home() {
                   </div>
                   <p className="text-[11px] text-zinc-400 mb-1.5 leading-snug">{loc.adresa}</p>
                   
-                  {/* Štítky s informacemi */}
                   <div className="flex flex-wrap gap-1">
                     {loc.kdy_chci && (
                       <span className="px-1.5 py-0.5 bg-purple-900/40 text-purple-300 text-[9px] uppercase font-bold rounded border border-purple-700/50">
@@ -392,7 +396,6 @@ export default function Home() {
 
             <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs custom-scrollbar">
               
-              {/* Nové pole: Výběr Barvy */}
               <div className="sm:col-span-2">
                 <label className="text-zinc-400 mb-2 block font-semibold text-[10px] uppercase tracking-wider">Barva špendlíku</label>
                 <div className="flex gap-3">
@@ -409,10 +412,18 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Adresa */}
+              {/* Adresa (Našeptávač) */}
               <div className="sm:col-span-2 relative mt-2">
                 <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Adresa (Vyhledávání) *</label>
-                <input required type="text" placeholder="Začni psát adresu..." value={formData.adresa} onChange={(e) => handleAddressChange(e.target.value)} onFocus={() => formData.adresa.length > 3 && setShowSuggestions(true)} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all" />
+                <input 
+                  required 
+                  type="text" 
+                  placeholder="Začni psát adresu..." 
+                  value={formData.adresa} 
+                  onChange={(e) => handleAddressChange(e.target.value)} 
+                  onFocus={() => formData.adresa.length > 3 && setShowSuggestions(true)} 
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all" 
+                />
                 
                 {showSuggestions && addressSuggestions.length > 0 && (
                   <div className="absolute top-[100%] left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
