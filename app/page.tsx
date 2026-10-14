@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import Auth from '@/components/Auth'
 import dynamic from 'next/dynamic'
 import { LocationItem } from '@/components/MapComponent'
-import { LogOut, List, MapPin, Plus, Menu, X, Trash2, Edit3, Search, Loader2, Camera, Filter, ArrowUpDown } from 'lucide-react'
+import { LogOut, List, MapPin, Plus, Menu, X, Trash2, Edit3, Search, Loader2, Camera, Filter, ArrowUpDown, Globe } from 'lucide-react'
 
 const MapComponent = dynamic(() => import('@/components/MapComponent'), { 
   ssr: false,
@@ -61,6 +61,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [locations, setLocations] = useState<LocationItem[]>([])
   const [search, setSearch] = useState('')
+  const [targetPosition, setTargetPosition] = useState<[number, number] | null>(null)
   
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name' | 'date_wanted'>('newest')
   const [filterColor, setFilterColor] = useState<string>('all')
@@ -73,7 +74,12 @@ export default function Home() {
 
   const [addressSuggestions, setAddressSuggestions] = useState<any[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const typingTimeout = useRef<NodeJS.Timeout | null>(null)
+  const modalTypingTimeout = useRef<NodeJS.Timeout | null>(null)
+
+  const [searchSuggestions, setSearchSuggestions] = useState<any[]>([])
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false)
+  const searchTypingTimeout = useRef<NodeJS.Timeout | null>(null)
+  const searchContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -90,6 +96,16 @@ export default function Home() {
     return () => subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowSearchSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   const fetchLocations = async () => {
     const { data, error } = await supabase.from('locations').select('*')
     if (!error && data) {
@@ -97,16 +113,38 @@ export default function Home() {
     }
   }
 
-  const handleAddressChange = (val: string) => {
+  const handleSearchChange = (val: string) => {
+    setSearch(val)
+    setShowSearchSuggestions(true)
+
+    if (searchTypingTimeout.current) clearTimeout(searchTypingTimeout.current)
+
+    if (val.trim().length < 3) {
+      setSearchSuggestions([])
+      return
+    }
+
+    searchTypingTimeout.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(val)}&addressdetails=1&limit=4`)
+        const data = await res.json()
+        setSearchSuggestions(data || [])
+      } catch (e) {
+        console.error(e)
+      }
+    }, 450)
+  }
+
+  const handleModalAddressChange = (val: string) => {
     setFormData({ ...formData, adresa: val })
-    if (typingTimeout.current) clearTimeout(typingTimeout.current)
+    if (modalTypingTimeout.current) clearTimeout(modalTypingTimeout.current)
     
     if (val.length < 4) {
       setAddressSuggestions([])
       setShowSuggestions(false)
       return
     }
-    typingTimeout.current = setTimeout(async () => {
+    modalTypingTimeout.current = setTimeout(async () => {
       try {
         const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(val)}&addressdetails=1&limit=5`)
         const data = await res.json()
@@ -208,6 +246,13 @@ export default function Home() {
     setIsModalOpen(true)
   }
 
+  const matchingSaved = search.trim().length >= 1
+    ? locations.filter(l => 
+        (l.nazev?.toLowerCase() || '').includes(search.toLowerCase()) ||
+        (l.adresa?.toLowerCase() || '').includes(search.toLowerCase())
+      ).slice(0, 5)
+    : []
+
   let processedLocations = [...locations]
 
   if (search) {
@@ -247,49 +292,124 @@ export default function Home() {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100 font-sans">
       
+      {/* MAPA */}
       <div className="absolute inset-0 z-0">
-        <MapComponent locations={processedLocations} onSelectLocation={handleEdit} />
+        <MapComponent locations={processedLocations} onSelectLocation={handleEdit} targetPosition={targetPosition} />
       </div>
 
+      {/* MOBILNÍ HAMBURGER MENU */}
       <button 
         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-        className="md:hidden absolute top-4 left-4 z-30 p-2.5 bg-zinc-900/90 backdrop-blur-md text-zinc-200 rounded-xl border border-zinc-800 shadow-xl"
+        className="md:hidden absolute top-4 left-4 z-30 p-2.5 bg-zinc-900/90 backdrop-blur-md text-zinc-200 rounded-xl border border-zinc-800 shadow-xl cursor-pointer hover:bg-zinc-800 hover:text-white transition-all active:scale-95"
       >
         {isSidebarOpen ? <X className="w-4 h-4 text-purple-400" /> : <Menu className="w-4 h-4 text-purple-400" />}
       </button>
 
+      {/* PANEL LEVÝ (ZDE JSOU OPRAVENÉ ROHY S OVERFLOW-HIDDEN) */}
       <div className={`
         absolute top-4 bottom-4 left-4 z-20 
         w-[calc(100vw-2rem)] sm:w-[350px] 
         bg-zinc-900/95 backdrop-blur-xl 
         shadow-[0_20px_50px_rgba(0,0,0,0.9)] 
-        rounded-2xl flex flex-col 
+        rounded-2xl overflow-hidden flex flex-col 
         border border-zinc-800/80 
         transition-all duration-300
         ${isSidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-[calc(100%+2rem)] md:translate-x-0 opacity-0 md:opacity-100'}
       `}>
-        <div className="p-4 border-b border-zinc-800/80 bg-zinc-950/40 flex items-center justify-between shrink-0">
+        {/* Hlavička s explicitním zaoblením nahoře */}
+        <div className="p-4 border-b border-zinc-800/80 bg-zinc-950/40 flex items-center justify-between shrink-0 rounded-t-2xl">
           <div>
             <h1 className="text-base font-bold text-zinc-100 flex items-center gap-2">
               <MapPin className="text-purple-400 w-4 h-4" />
               Moje adresy ({processedLocations.length})
             </h1>
           </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-zinc-400">
+          <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-zinc-400 hover:text-white cursor-pointer p-1">
             <X className="w-4 h-4" />
           </button>
         </div>
 
+        {/* Nástroje: Hledání s našeptávačem, Filtr Barvy, Řazení */}
         <div className="p-3 border-b border-zinc-800/50 space-y-2 shrink-0">
-          <div className="relative">
+          <div ref={searchContainerRef} className="relative">
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-zinc-500" />
             <input 
               type="text" 
               placeholder="Hledat název nebo adresu..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onFocus={() => setShowSearchSuggestions(true)}
+              className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-8 pr-7 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500"
             />
+            {search && (
+              <button 
+                onClick={() => { setSearch(''); setSearchSuggestions([]); }} 
+                className="absolute right-2.5 top-2.5 text-zinc-500 hover:text-white cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {/* ROZBALOVACÍ NAŠEPTÁVAČ PRO VYHLEDÁVÁNÍ */}
+            {showSearchSuggestions && search.trim().length >= 1 && (
+              <div className="absolute top-[100%] left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700/80 rounded-xl shadow-2xl z-50 overflow-hidden max-h-64 overflow-y-auto custom-scrollbar">
+                
+                {/* 1. Shody z mých uložených adres */}
+                {matchingSaved.length > 0 && (
+                  <div className="p-1.5 border-b border-zinc-800">
+                    <p className="text-[10px] uppercase font-bold text-zinc-500 px-2 py-1 tracking-wider">Moje uložená místa</p>
+                    {matchingSaved.map((loc) => (
+                      <div
+                        key={loc.id}
+                        onClick={() => {
+                          setSearch(loc.nazev || loc.adresa || '')
+                          setTargetPosition([loc.lat, loc.lng])
+                          setShowSearchSuggestions(false)
+                        }}
+                        className="p-2 hover:bg-zinc-800/90 rounded-lg cursor-pointer transition-colors flex items-center gap-2 text-xs"
+                      >
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: loc.barva || '#a855f7' }} />
+                        <div className="overflow-hidden">
+                          <p className="font-semibold text-zinc-200 truncate">{loc.nazev || 'Bez názvu'}</p>
+                          <p className="text-[10px] text-zinc-400 truncate">{loc.adresa}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 2. Našeptané adresy z mapy (OpenStreetMap) */}
+                {searchSuggestions.length > 0 && (
+                  <div className="p-1.5">
+                    <p className="text-[10px] uppercase font-bold text-purple-400 px-2 py-1 tracking-wider flex items-center gap-1">
+                      <Globe className="w-3 h-3" />
+                      Adresy z mapy
+                    </p>
+                    {searchSuggestions.map((sug, i) => (
+                      <div
+                        key={i}
+                        onClick={() => {
+                          setSearch(sug.display_name)
+                          const lat = parseFloat(sug.lat)
+                          const lng = parseFloat(sug.lon)
+                          setTargetPosition([lat, lng])
+                          setShowSearchSuggestions(false)
+                        }}
+                        className="p-2 hover:bg-zinc-800/90 rounded-lg cursor-pointer transition-colors text-xs text-zinc-300 border-b border-zinc-800/50 last:border-0"
+                      >
+                        <p className="text-[11px] leading-snug line-clamp-2">{sug.display_name}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {matchingSaved.length === 0 && searchSuggestions.length === 0 && (
+                  <div className="p-3 text-center text-xs text-zinc-500">
+                    Žádná adresa nenalezena
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2">
@@ -298,7 +418,7 @@ export default function Home() {
               <select 
                 value={sortBy} 
                 onChange={(e) => setSortBy(e.target.value as any)}
-                className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-7 pr-2 py-2 text-[10px] uppercase font-semibold tracking-wider text-zinc-300 appearance-none focus:outline-none focus:border-purple-500"
+                className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-7 pr-2 py-2 text-[10px] uppercase font-semibold tracking-wider text-zinc-300 appearance-none focus:outline-none focus:border-purple-500 cursor-pointer hover:border-zinc-700 transition-colors"
               >
                 <option value="newest">Od nejnovějších</option>
                 <option value="oldest">Od nejstarších</option>
@@ -312,7 +432,7 @@ export default function Home() {
               <select 
                 value={filterColor} 
                 onChange={(e) => setFilterColor(e.target.value)}
-                className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-7 pr-2 py-2 text-[10px] uppercase font-semibold tracking-wider text-zinc-300 appearance-none focus:outline-none focus:border-purple-500"
+                className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-7 pr-2 py-2 text-[10px] uppercase font-semibold tracking-wider text-zinc-300 appearance-none focus:outline-none focus:border-purple-500 cursor-pointer hover:border-zinc-700 transition-colors"
               >
                 <option value="all">Všechny barvy</option>
                 {PRESET_COLORS.map(c => (
@@ -323,6 +443,7 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Seznam položek */}
         <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
           {processedLocations.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center opacity-50">
@@ -331,15 +452,31 @@ export default function Home() {
             </div>
           ) : (
             processedLocations.map((loc) => (
-              <div key={loc.id} className="p-3 bg-zinc-950/60 rounded-xl border border-zinc-800/80 hover:border-zinc-700 transition-all flex gap-3 relative overflow-hidden group">
+              <div 
+                key={loc.id} 
+                onClick={() => setTargetPosition([loc.lat, loc.lng])}
+                className="p-3 bg-zinc-950/60 rounded-xl border border-zinc-800/80 hover:border-zinc-700 transition-all flex gap-3 relative overflow-hidden group cursor-pointer"
+              >
                 <div className="absolute left-0 top-0 bottom-0 w-1.5 opacity-80" style={{ backgroundColor: loc.barva || '#a855f7' }}></div>
 
                 <div className="flex-1 pl-1">
                   <div className="flex justify-between items-start mb-1">
                     <h3 className="font-bold text-xs text-zinc-100">{loc.nazev || 'Bez názvu'}</h3>
                     <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => handleEdit(loc)} className="p-1 hover:text-purple-400 bg-zinc-800 rounded"><Edit3 className="w-3 h-3" /></button>
-                      <button onClick={() => handleDelete(loc.id)} className="p-1 hover:text-red-400 bg-zinc-800 rounded"><Trash2 className="w-3 h-3" /></button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleEdit(loc); }} 
+                        className="p-1 hover:text-purple-400 bg-zinc-800 rounded cursor-pointer transition-colors" 
+                        title="Upravit"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDelete(loc.id); }} 
+                        className="p-1 hover:text-red-400 bg-zinc-800 rounded cursor-pointer transition-colors" 
+                        title="Smazat"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
                     </div>
                   </div>
                   <p className="text-[11px] text-zinc-400 mb-1.5 leading-snug">{loc.adresa}</p>
@@ -362,10 +499,11 @@ export default function Home() {
           )}
         </div>
 
-        <div className="p-3 border-t border-zinc-800/80 bg-zinc-950/50 shrink-0">
+        {/* Spodní lišta s explicitním zaoblením dole */}
+        <div className="p-3 border-t border-zinc-800/80 bg-zinc-950/50 shrink-0 rounded-b-2xl">
           <button 
             onClick={() => { setEditingId(null); setFormData(emptyForm); setIsModalOpen(true) }}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-xs font-semibold rounded-lg hover:from-blue-500 hover:to-purple-500 transition-all shadow-lg"
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-xs font-semibold rounded-lg transition-all shadow-lg shadow-purple-600/20 active:scale-[0.98] cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             Přidat nové místo
@@ -373,11 +511,12 @@ export default function Home() {
         </div>
       </div>
 
+      {/* TLAČÍTKO ODHLÁSIT */}
       <button 
         onClick={() => supabase.auth.signOut()}
-        className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900/90 text-zinc-300 text-xs font-semibold rounded-lg border border-zinc-800 shadow-xl"
+        className="absolute top-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900/90 hover:bg-red-950/80 text-zinc-300 hover:text-red-300 text-xs font-semibold rounded-lg border border-zinc-800 hover:border-red-700/60 shadow-xl hover:shadow-[0_0_20px_rgba(239,68,68,0.25)] active:scale-95 transition-all cursor-pointer group"
       >
-        <LogOut className="w-3.5 h-3.5" />
+        <LogOut className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" />
         <span className="hidden sm:inline">Odhlásit</span>
       </button>
 
@@ -391,7 +530,7 @@ export default function Home() {
                 <MapPin className="text-purple-400 w-5 h-5" />
                 {editingId ? 'Upravit záznam' : 'Nové místo'}
               </h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-white p-1 bg-zinc-800 rounded-lg"><X className="w-5 h-5" /></button>
+              <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-white p-1 bg-zinc-800 hover:bg-zinc-700 rounded-lg cursor-pointer transition-colors"><X className="w-5 h-5" /></button>
             </div>
 
             <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs custom-scrollbar">
@@ -404,7 +543,7 @@ export default function Home() {
                       key={color.hex}
                       type="button"
                       onClick={() => setFormData({...formData, barva: color.hex})}
-                      className={`w-8 h-8 rounded-full border-2 transition-all ${formData.barva === color.hex ? 'border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'border-transparent hover:scale-105'}`}
+                      className={`w-8 h-8 rounded-full border-2 transition-all cursor-pointer ${formData.barva === color.hex ? 'border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'border-transparent hover:scale-105'}`}
                       style={{ backgroundColor: color.hex }}
                       title={color.label}
                     />
@@ -420,7 +559,7 @@ export default function Home() {
                   type="text" 
                   placeholder="Začni psát adresu..." 
                   value={formData.adresa} 
-                  onChange={(e) => handleAddressChange(e.target.value)} 
+                  onChange={(e) => handleModalAddressChange(e.target.value)} 
                   onFocus={() => formData.adresa.length > 3 && setShowSuggestions(true)} 
                   className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all" 
                 />
@@ -430,7 +569,7 @@ export default function Home() {
                     {addressSuggestions.map((sug, i) => (
                       <div 
                         key={i} 
-                        className="p-3 hover:bg-zinc-700 cursor-pointer border-b border-zinc-700/50 last:border-0 text-zinc-200"
+                        className="p-3 hover:bg-zinc-700 cursor-pointer border-b border-zinc-700/50 last:border-0 text-zinc-200 transition-colors"
                         onClick={() => {
                           setFormData({ ...formData, adresa: sug.display_name })
                           setShowSuggestions(false)
@@ -455,7 +594,7 @@ export default function Home() {
 
               <div>
                 <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Firma?</label>
-                <select value={formData.firma} onChange={e => setFormData({...formData, firma: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white appearance-none">
+                <select value={formData.firma} onChange={e => setFormData({...formData, firma: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white appearance-none cursor-pointer hover:border-zinc-700 transition-colors">
                   <option value="">Nevybráno</option>
                   <option value="Ano">Ano</option>
                   <option value="Ne">Ne</option>
@@ -489,7 +628,7 @@ export default function Home() {
 
               <div>
                 <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Kdy dělal?</label>
-                <input type="date" value={formData.kdy_delal} onChange={e => setFormData({...formData, kdy_delal: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white [color-scheme:dark]" />
+                <input type="date" value={formData.kdy_delal} onChange={e => setFormData({...formData, kdy_delal: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white [color-scheme:dark] cursor-pointer" />
               </div>
 
               <div className="sm:col-span-2">
@@ -499,7 +638,7 @@ export default function Home() {
 
               <div>
                 <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Kdy chci?</label>
-                <input type="date" value={formData.kdy_chci} onChange={e => setFormData({...formData, kdy_chci: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white [color-scheme:dark]" />
+                <input type="date" value={formData.kdy_chci} onChange={e => setFormData({...formData, kdy_chci: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white [color-scheme:dark] cursor-pointer" />
               </div>
 
               <div className="sm:col-span-2">
@@ -517,7 +656,7 @@ export default function Home() {
                 {formData.moje_fotka && (
                   <div className="relative">
                     <img src={formData.moje_fotka} alt="Náhled" className="h-16 w-16 object-cover rounded-lg border border-purple-500/50 shadow-lg" />
-                    <button type="button" onClick={() => setFormData({...formData, moje_fotka: ''})} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow hover:bg-red-600">
+                    <button type="button" onClick={() => setFormData({...formData, moje_fotka: ''})} className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow cursor-pointer transition-colors">
                       <X className="w-3 h-3" />
                     </button>
                   </div>
@@ -525,10 +664,10 @@ export default function Home() {
               </div>
 
               <div className="sm:col-span-2 flex justify-end gap-3 mt-6 pt-5 border-t border-zinc-800 shrink-0">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 font-medium">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg font-medium cursor-pointer transition-colors">
                   Zrušit
                 </button>
-                <button type="submit" disabled={saving} className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-bold hover:from-blue-500 hover:to-purple-500 flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all">
+                <button type="submit" disabled={saving} className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-purple-600/20 active:scale-[0.98] transition-all cursor-pointer">
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                   {editingId ? 'Uložit změny' : 'Přidat na mapu'}
                 </button>

@@ -30,11 +30,11 @@ export default function Auth() {
         }}
       />
       
-      {/* Tmavý atmosféru dolaďující přechod pro vysoký kontrast */}
+      {/* Tmavý gradient */}
       <div className="absolute inset-0 bg-gradient-to-t from-black via-slate-950/60 to-black/80 z-0" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_20%,_rgba(0,0,0,0.8)_100%)] z-0" />
 
-      {/* Barevný světlomet v pozadí kola */}
+      {/* Světlomet v pozadí */}
       <div className="absolute top-[20%] w-[500px] h-[500px] bg-purple-900/20 rounded-full blur-[140px] pointer-events-none z-0" />
 
       {/* 2. ZÁŘÍCÍ RUSKÉ KOLO */}
@@ -46,16 +46,13 @@ export default function Auth() {
             className="w-full h-full drop-shadow-[0_0_35px_rgba(168,85,247,0.5)] opacity-95" 
             viewBox="0 0 100 100"
           >
-            {/* Vnější ráfky */}
             <circle cx="50" cy="50" r="46" fill="none" stroke="url(#ferris-outer)" strokeWidth="1.2" />
             <circle cx="50" cy="50" r="44" fill="none" stroke="#2563eb" strokeWidth="0.4" className="opacity-70" />
             <circle cx="50" cy="50" r="43.5" fill="none" stroke="#06b6d4" strokeWidth="0.2" strokeDasharray="1 2.5" />
             
-            {/* Vnitřní konstrukce */}
             <circle cx="50" cy="50" r="18" fill="none" stroke="#db2777" strokeWidth="0.5" className="opacity-60" />
             <circle cx="50" cy="50" r="8" fill="none" stroke="#f43f5e" strokeWidth="0.4" className="opacity-40" />
             
-            {/* Paprsky */}
             {[...Array(24)].map((_, i) => (
               <line
                 key={i}
@@ -69,7 +66,6 @@ export default function Auth() {
               />
             ))}
 
-            {/* Vnitřní křížení */}
             {[...Array(24)].map((_, i) => {
               const angle1 = (i * 2 * Math.PI) / 24;
               const angle2 = ((i + 1) * 2 * Math.PI) / 24;
@@ -87,7 +83,6 @@ export default function Auth() {
               )
             })}
 
-            {/* Svítící kabinky */}
             {[...Array(24)].map((_, i) => {
               const x = 50 + 46 * Math.cos((i * 2 * Math.PI) / 24);
               const y = 50 + 46 * Math.sin((i * 2 * Math.PI) / 24);
@@ -143,7 +138,7 @@ export default function Auth() {
         </div>
       </div>
 
-      {/* 3. MINIMALISTICKÝ PŘIHLAŠOVACÍ FORMULÁŘ */}
+      {/* 3. PŘIHLAŠOVACÍ FORMULÁŘ */}
       <div className="relative z-10 w-full max-w-[360px] mt-32 sm:mt-40 transition-all">
         <div className="p-8 bg-black/75 backdrop-blur-xl rounded-2xl border border-white/10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)]">
           
@@ -175,7 +170,7 @@ export default function Auth() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-2 p-3.5 text-[13px] text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-lg hover:from-blue-500 hover:via-indigo-500 hover:to-purple-500 disabled:from-zinc-900 disabled:to-zinc-900 disabled:text-zinc-600 font-semibold tracking-wider uppercase active:scale-[0.98] transition-all shadow-[0_0_25px_rgba(79,70,229,0.35)] hover:shadow-[0_0_35px_rgba(147,51,234,0.55)] border border-indigo-500/30"
+              className="mt-2 p-3.5 text-[13px] text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:via-indigo-500 hover:to-purple-500 disabled:from-zinc-900 disabled:to-zinc-900 disabled:text-zinc-600 font-semibold tracking-wider uppercase active:scale-[0.98] transition-all shadow-[0_0_25px_rgba(79,70,229,0.35)] hover:shadow-[0_0_35px_rgba(147,51,234,0.55)] border border-indigo-500/30 cursor-pointer disabled:cursor-not-allowed"
             >
               {loading ? 'Přihlašování...' : 'Přihlásit se'}
             </button>

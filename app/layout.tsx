@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css"; // TENTO ŘÁDEK JE KLÍČOVÝ!
 
 export const metadata: Metadata = {
-  title: "Moje Mapa",
-  description: "Správa adres a mapa",
+  title: "Kolotoč",
+  description: "Votoč-kolotoč",
 };
 
 export default function RootLayout({

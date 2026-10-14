@@ -25,7 +25,6 @@ export type LocationItem = {
   lng: number
 }
 
-// Funkce pro vygenerování SVG špendlíku s vlastní barvou
 const createColoredIcon = (color: string) => {
   const svgTemplate = `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" width="36px" height="36px" stroke="white" stroke-width="2">
@@ -36,12 +35,12 @@ const createColoredIcon = (color: string) => {
     className: "custom-colored-marker",
     html: svgTemplate,
     iconSize: [36, 36],
-    iconAnchor: [18, 36], // Špička špendlíku ukazuje přesně na souřadnici
+    iconAnchor: [18, 36],
     popupAnchor: [0, -32]
   });
 }
 
-const defaultLocationIcon = createColoredIcon('#3b82f6') // Modrá pro aktuální polohu
+const defaultLocationIcon = createColoredIcon('#3b82f6')
 
 function LocationMarker({ position }: { position: [number, number] | null }) {
   const map = useMap()
@@ -59,9 +58,21 @@ function LocationMarker({ position }: { position: [number, number] | null }) {
   )
 }
 
-export default function MapComponent({ locations = [], onSelectLocation }: { 
+// Ovladač pro plynulý přelet na vyhledanou adresu
+function MapFlyController({ targetPosition }: { targetPosition?: [number, number] | null }) {
+  const map = useMap()
+  useEffect(() => {
+    if (targetPosition) {
+      map.flyTo(targetPosition, 16, { duration: 1.4 })
+    }
+  }, [targetPosition, map])
+  return null
+}
+
+export default function MapComponent({ locations = [], onSelectLocation, targetPosition }: { 
   locations?: LocationItem[], 
-  onSelectLocation?: (loc: LocationItem) => void 
+  onSelectLocation?: (loc: LocationItem) => void,
+  targetPosition?: [number, number] | null
 }) {
   const [position, setPosition] = useState<[number, number] | null>(null)
 
@@ -99,6 +110,7 @@ export default function MapComponent({ locations = [], onSelectLocation }: {
         />
         <ZoomControl position="bottomright" />
         <LocationMarker position={position} />
+        <MapFlyController targetPosition={targetPosition} />
 
         {locations.map((loc) => (
           <Marker 
@@ -119,7 +131,7 @@ export default function MapComponent({ locations = [], onSelectLocation }: {
                 {onSelectLocation && (
                   <button 
                     onClick={() => onSelectLocation(loc)} 
-                    className="mt-2 w-full text-center bg-purple-600 text-white text-xs py-1.5 rounded-lg hover:bg-purple-700 font-medium"
+                    className="mt-2 w-full text-center bg-purple-600 text-white text-xs py-1.5 rounded-lg hover:bg-purple-700 font-medium cursor-pointer"
                   >
                     Detail / Upravit
                   </button>
