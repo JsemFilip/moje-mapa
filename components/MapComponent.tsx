@@ -1,6 +1,6 @@
 "use client"
 import { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 
@@ -25,22 +25,46 @@ export type LocationItem = {
   lng: number
 }
 
-const createColoredIcon = (color: string) => {
-  const svgTemplate = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" width="36px" height="36px" stroke="white" stroke-width="2">
-      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-    </svg>`;
+export type MapBounds = {
+  south: number
+  west: number
+  north: number
+  east: number
+}
+
+const createPizzaIcon = (colorString?: string) => {
+  const colors = colorString ? colorString.split(',') : ['#a855f7'];
+  let bg = colors[0];
+
+  if (colors.length === 2) {
+    bg = `conic-gradient(${colors[0]} 0% 50%, ${colors[1]} 50% 100%)`;
+  } else if (colors.length === 3) {
+    bg = `conic-gradient(${colors[0]} 0% 33.33%, ${colors[1]} 33.33% 66.66%, ${colors[2]} 66.66% 100%)`;
+  } else if (colors.length >= 4) {
+    bg = `conic-gradient(${colors[0]} 0% 25%, ${colors[1]} 25% 50%, ${colors[2]} 50% 75%, ${colors[3]} 75% 100%)`;
+  }
+
+  const html = `
+    <div style="
+      width: 24px; 
+      height: 24px; 
+      border-radius: 50%; 
+      background: ${bg}; 
+      border: 2.5px solid white; 
+      box-shadow: 0 3px 6px rgba(0,0,0,0.6);
+    "></div>
+  `;
   
   return L.divIcon({
-    className: "custom-colored-marker",
-    html: svgTemplate,
-    iconSize: [36, 36],
-    iconAnchor: [18, 36],
-    popupAnchor: [0, -32]
+    className: "custom-pizza-marker bg-transparent border-0",
+    html: html,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -14]
   });
 }
 
-const defaultLocationIcon = createColoredIcon('#3b82f6')
+const defaultLocationIcon = createPizzaIcon('#3b82f6')
 
 function LocationMarker({ position }: { position: [number, number] | null }) {
   const map = useMap()
@@ -58,7 +82,6 @@ function LocationMarker({ position }: { position: [number, number] | null }) {
   )
 }
 
-// Ovladač pro plynulý přelet na vyhledanou adresu
 function MapFlyController({ targetPosition }: { targetPosition?: [number, number] | null }) {
   const map = useMap()
   useEffect(() => {
@@ -69,10 +92,36 @@ function MapFlyController({ targetPosition }: { targetPosition?: [number, number
   return null
 }
 
-export default function MapComponent({ locations = [], onSelectLocation, targetPosition }: { 
+// Handler pro sledování okrajů zobrazené mapy
+function BoundsHandler({ onBoundsChange }: { onBoundsChange?: (b: MapBounds) => void }) {
+  const map = useMapEvents({
+    moveend: () => updateBounds(),
+    zoomend: () => updateBounds(),
+  })
+
+  const updateBounds = () => {
+    if (!onBoundsChange) return;
+    const b = map.getBounds();
+    onBoundsChange({
+      south: b.getSouth(),
+      west: b.getWest(),
+      north: b.getNorth(),
+      east: b.getEast(),
+    });
+  }
+
+  useEffect(() => {
+    updateBounds();
+  }, [map])
+
+  return null;
+}
+
+export default function MapComponent({ locations = [], onSelectLocation, targetPosition, onBoundsChange }: { 
   locations?: LocationItem[], 
   onSelectLocation?: (loc: LocationItem) => void,
-  targetPosition?: [number, number] | null
+  targetPosition?: [number, number] | null,
+  onBoundsChange?: (bounds: MapBounds) => void
 }) {
   const [position, setPosition] = useState<[number, number] | null>(null)
 
@@ -111,12 +160,13 @@ export default function MapComponent({ locations = [], onSelectLocation, targetP
         <ZoomControl position="bottomright" />
         <LocationMarker position={position} />
         <MapFlyController targetPosition={targetPosition} />
+        <BoundsHandler onBoundsChange={onBoundsChange} />
 
         {locations.map((loc) => (
           <Marker 
             key={loc.id} 
             position={[loc.lat, loc.lng]} 
-            icon={createColoredIcon(loc.barva || '#a855f7')}
+            icon={createPizzaIcon(loc.barva)}
           >
             <Popup>
               <div className="p-1 min-w-[180px] text-zinc-900">
