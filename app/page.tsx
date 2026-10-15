@@ -4,7 +4,7 @@ import { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabaseClient'
 import Auth from '@/components/Auth'
 import dynamic from 'next/dynamic'
-import { LocationItem, MapBounds, parseColorsToHexArray } from '@/components/MapComponent'
+import type { LocationItem, MapBounds } from '@/components/MapComponent'
 import { LogOut, List, MapPin, Plus, Menu, X, Trash2, Edit3, Search, Loader2, Camera, Filter, ArrowUpDown, Globe, Check, Eye, LocateFixed, ChevronDown, AlertTriangle } from 'lucide-react'
 
 const MapComponent = dynamic(() => import('@/components/MapComponent'), { 
@@ -23,6 +23,31 @@ const PRESET_COLORS = [
   { label: 'Růžová', hex: '#ec4899' },
   { label: 'Šedá', hex: '#71717a' }
 ]
+
+const COLOR_MAP: { [key: string]: string } = {
+  'fialová': '#a855f7',
+  'červená': '#ef4444',
+  'zelená': '#22c55e',
+  'modrá': '#3b82f6',
+  'žlutá': '#eab308',
+  'oranžová': '#f97316',
+  'tyrkysová': '#06b6d4',
+  'růžová': '#ec4899',
+  'šedá': '#71717a'
+}
+
+const resolveColorToHex = (colorStr: string): string => {
+  const trimmed = colorStr.trim()
+  if (trimmed.startsWith('#')) return trimmed
+  return COLOR_MAP[trimmed.toLowerCase()] || '#a855f7'
+}
+
+const parseColorsToHexArray = (colorString?: string): string[] => {
+  if (!colorString) return ['#a855f7']
+  const parts = colorString.split(',').map(s => s.trim()).filter(Boolean)
+  if (parts.length === 0) return ['#a855f7']
+  return parts.map(resolveColorToHex)
+}
 
 type FormDataState = {
   barva: string
@@ -118,7 +143,7 @@ export default function Home() {
   const [isColorDropdownOpen, setIsColorDropdownOpen] = useState(false)
 
   useEffect(() => {
-    if (window.innerWidth > 768) {
+    if (typeof window !== "undefined" && window.innerWidth > 768) {
       setIsSidebarOpen(true)
     }
   }, [])
@@ -355,7 +380,7 @@ export default function Home() {
     setTargetPosition([loc.lat, loc.lng])
     setActiveLocationId(loc.id)
     
-    if (window.innerWidth < 768) {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
       setIsSidebarOpen(false)
     }
   }
@@ -454,7 +479,6 @@ export default function Home() {
         }}
       />
 
-      {/* Boční panel řízený dedikovanou třídou z globals.css */}
       <div 
         className={`
           sidebar-panel-container
@@ -519,7 +543,7 @@ export default function Home() {
                   <div className="p-1.5">
                     <p className="text-[10px] uppercase font-bold text-purple-400 px-2 py-1 tracking-wider flex items-center gap-1"><Globe className="w-3 h-3" /> Adresy z mapy</p>
                     {searchSuggestions.map((sug, i) => (
-                      <div key={i} onClick={() => { setSearch(sug.display_name); setTargetPosition([parseFloat(sug.lat), parseFloat(sug.lon)]); setActiveLocationId(null); setShowSearchSuggestions(false); if(window.innerWidth < 768) setIsSidebarOpen(false); }} className="p-2 hover:bg-zinc-800/90 rounded-lg cursor-pointer transition-colors text-xs text-zinc-300 border-b border-zinc-800/50 last:border-0">
+                      <div key={i} onClick={() => { setSearch(sug.display_name); setTargetPosition([parseFloat(sug.lat), parseFloat(sug.lon)]); setActiveLocationId(null); setShowSearchSuggestions(false); if(typeof window !== "undefined" && window.innerWidth < 768) setIsSidebarOpen(false); }} className="p-2 hover:bg-zinc-800/90 rounded-lg cursor-pointer transition-colors text-xs text-zinc-300 border-b border-zinc-800/50 last:border-0">
                         <p className="text-[11px] leading-snug line-clamp-2">{sug.display_name}</p>
                       </div>
                     ))}

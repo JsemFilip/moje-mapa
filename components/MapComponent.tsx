@@ -33,8 +33,7 @@ export type MapBounds = {
   east: number
 }
 
-// Mapa slovních názvů barev na HEX kódy
-export const COLOR_MAP: { [key: string]: string } = {
+const COLOR_MAP: { [key: string]: string } = {
   'fialová': '#a855f7',
   'červená': '#ef4444',
   'zelená': '#22c55e',
@@ -46,14 +45,13 @@ export const COLOR_MAP: { [key: string]: string } = {
   'šedá': '#71717a'
 }
 
-// Bezpečný převodník slovního názvu nebo HEX kódu na HEX barvu
-export const resolveColorToHex = (colorStr: string): string => {
+const resolveColorToHex = (colorStr: string): string => {
   const trimmed = colorStr.trim()
   if (trimmed.startsWith('#')) return trimmed
   return COLOR_MAP[trimmed.toLowerCase()] || '#a855f7'
 }
 
-export const parseColorsToHexArray = (colorString?: string): string[] => {
+const parseColorsToHexArray = (colorString?: string): string[] => {
   if (!colorString) return ['#a855f7']
   const parts = colorString.split(',').map(s => s.trim()).filter(Boolean)
   if (parts.length === 0) return ['#a855f7']
@@ -101,17 +99,19 @@ const createPizzaIcon = (colorString?: string) => {
   })
 }
 
-const userLocationIcon = L.divIcon({
-  className: "user-location-marker bg-transparent border-0 pointer-events-none",
-  html: `
-    <div class="relative flex items-center justify-center w-8 h-8 pointer-events-none">
-      <div class="absolute inline-flex w-full h-full rounded-full bg-blue-500 opacity-40 animate-ping"></div>
-      <div class="relative inline-flex rounded-full w-4 h-4 bg-blue-600 border-2 border-white shadow-lg"></div>
-    </div>
-  `,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16]
-})
+const getUserLocationIcon = () => {
+  return L.divIcon({
+    className: "user-location-marker bg-transparent border-0 pointer-events-none",
+    html: `
+      <div class="relative flex items-center justify-center w-8 h-8 pointer-events-none">
+        <div class="absolute inline-flex w-full h-full rounded-full bg-blue-500 opacity-40 animate-ping"></div>
+        <div class="relative inline-flex rounded-full w-4 h-4 bg-blue-600 border-2 border-white shadow-lg"></div>
+      </div>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
+  })
+}
 
 function MapController({ 
   position, 
@@ -164,7 +164,7 @@ function MapController({
   }, [position, map])
 
   return position === null ? null : (
-    <Marker position={position} icon={userLocationIcon} interactive={false} />
+    <Marker position={position} icon={getUserLocationIcon()} interactive={false} />
   )
 }
 
@@ -214,7 +214,7 @@ export default function MapComponent({
   const markerRefs = useRef<{ [key: string]: L.Marker | null }>({})
 
   useEffect(() => {
-    if ("geolocation" in navigator) {
+    if (typeof window !== "undefined" && "geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setPosition([pos.coords.latitude, pos.coords.longitude]),
         () => setPosition([50.0755, 14.4378])
@@ -239,7 +239,6 @@ export default function MapComponent({
 
   return (
     <div className="relative h-full w-full z-0 bg-slate-100">
-      
       <style>{`
         .custom-dark-popup .leaflet-popup-content-wrapper {
           background: transparent !important;
@@ -301,7 +300,6 @@ export default function MapComponent({
             >
               <Popup className="custom-dark-popup" maxWidth={310} minWidth={280}>
                 <div className="p-3 bg-zinc-950/95 text-zinc-100 rounded-xl border border-zinc-800/80 shadow-2xl flex gap-3 relative overflow-hidden group">
-                  
                   <div className="absolute left-0 top-0 bottom-0 w-1.5 opacity-90 flex flex-col">
                     {locColors.map((c, i) => (
                       <div key={i} className="flex-1" style={{ backgroundColor: c }} />
@@ -402,7 +400,6 @@ export default function MapComponent({
                     </div>
 
                   </div>
-
                 </div>
               </Popup>
             </Marker>
