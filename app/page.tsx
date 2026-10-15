@@ -4,8 +4,8 @@ import { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabaseClient'
 import Auth from '@/components/Auth'
 import dynamic from 'next/dynamic'
-import { LocationItem, MapBounds } from '@/components/MapComponent'
-import { LogOut, List, MapPin, Plus, Menu, X, Trash2, Edit3, Search, Loader2, Camera, Filter, ArrowUpDown, Globe, Check, Eye, LocateFixed, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { LocationItem, MapBounds, parseColorsToHexArray } from '@/components/MapComponent'
+import { LogOut, List, MapPin, Plus, Menu, X, Trash2, Edit3, Search, Loader2, Camera, Filter, ArrowUpDown, Globe, Check, Eye, LocateFixed, ChevronDown, AlertTriangle } from 'lucide-react'
 
 const MapComponent = dynamic(() => import('@/components/MapComponent'), { 
   ssr: false,
@@ -43,7 +43,7 @@ type FormDataState = {
 }
 
 const emptyForm: FormDataState = {
-  barva: '#a855f7',
+  barva: 'Fialová',
   ic_rc: '',
   nazev: '',
   adresa: '',
@@ -67,6 +67,16 @@ const formatDate = (dateStr?: string) => {
     return `${parts[2]}.${parts[1]}.${parts[0]}`
   }
   return dateStr
+}
+
+const convertRawColorToNames = (raw?: string) => {
+  if (!raw) return 'Fialová'
+  const parts = raw.split(',').map(s => s.trim()).filter(Boolean)
+  const converted = parts.map(p => {
+    const found = PRESET_COLORS.find(c => c.hex.toLowerCase() === p.toLowerCase() || c.label.toLowerCase() === p.toLowerCase())
+    return found ? found.label : p
+  })
+  return converted.join(', ') || 'Fialová'
 }
 
 export default function Home() {
@@ -129,6 +139,25 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
+    if (!session) return
+
+    const channel = supabase
+      .channel('realtime-locations-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'locations' },
+        () => {
+          fetchLocations() 
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [session])
+
+  useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
         setShowSearchSuggestions(false)
@@ -148,18 +177,26 @@ export default function Home() {
     }
   }
 
-  const toggleColor = (hex: string) => {
-    let currentColors = formData.barva ? formData.barva.split(',') : [];
-    if (currentColors.includes(hex)) {
-      currentColors = currentColors.filter(c => c !== hex);
+  const toggleColor = (label: string) => {
+    let currentColors = formData.barva
+      ? formData.barva.split(',').map(s => s.trim()).filter(Boolean)
+      : []
+
+    currentColors = currentColors.map(c => {
+      const match = PRESET_COLORS.find(p => p.hex.toLowerCase() === c.toLowerCase() || p.label.toLowerCase() === c.toLowerCase())
+      return match ? match.label : c
+    })
+
+    if (currentColors.some(c => c.toLowerCase() === label.toLowerCase())) {
+      currentColors = currentColors.filter(c => c.toLowerCase() !== label.toLowerCase())
     } else {
       if (currentColors.length >= 4) {
-        alert("Můžeš vybrat maximálně 4 barvy jako příznaky.");
-        return;
+        alert("Můžeš vybrat maximálně 4 barvy jako příznaky.")
+        return
       }
-      currentColors.push(hex);
+      currentColors.push(label)
     }
-    setFormData({ ...formData, barva: currentColors.join(',') || PRESET_COLORS[0].hex });
+    setFormData({ ...formData, barva: currentColors.join(', ') || 'Fialová' })
   }
 
   const handleSearchChange = (val: string) => {
@@ -218,15 +255,15 @@ export default function Home() {
   }
 
   const notifyGoogleSheet = async (action: 'INSERT' | 'UPDATE' | 'DELETE', payload: any, oldPayload?: any) => {
-    const scriptUrl = process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL;
-    if (!scriptUrl) return; 
+    const scriptUrl = process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL
+    if (!scriptUrl) return 
 
     try {
       fetch(scriptUrl, {
         method: 'POST',
         body: JSON.stringify({ type: action, record: payload, old_record: oldPayload }),
         headers: { 'Content-Type': 'text/plain;charset=utf-8' }
-      }).catch(() => {});
+      }).catch(() => {})
     } catch (e) {}
   }
 
@@ -248,7 +285,7 @@ export default function Home() {
         lng = parseFloat(json[0].lon)
       } else {
         setSaving(false)
-        return alert("Nenašli jsme GPS pro tuto adresu. Zkontroluj překlepy.")
+        return alert("Nenašli jsme GPS pro tuto adresu.")
       }
     } catch (e) {
       setSaving(false)
@@ -258,14 +295,14 @@ export default function Home() {
     const payload = { ...formData, lat, lng, user_id: session.user.id }
 
     if (editingId) {
-      const oldLocation = locations.find(l => l.id === editingId);
+      const oldLocation = locations.find(l => l.id === editingId)
       const { data, error } = await supabase.from('locations').update(payload).eq('id', editingId).select()
       if (error) { setSaving(false); return alert("Chyba: " + error.message) }
-      if (data && data[0]) notifyGoogleSheet('UPDATE', data[0], oldLocation);
+      if (data && data[0]) notifyGoogleSheet('UPDATE', data[0], oldLocation)
     } else {
       const { data, error } = await supabase.from('locations').insert([payload]).select()
       if (error) { setSaving(false); return alert("Chyba: " + error.message) }
-      if (data && data[0]) notifyGoogleSheet('INSERT', data[0]);
+      if (data && data[0]) notifyGoogleSheet('INSERT', data[0])
     }
 
     setSaving(false)
@@ -276,26 +313,26 @@ export default function Home() {
   }
 
   const confirmDelete = async () => {
-    if (!locationToDelete) return;
-    const locToDelete = locations.find(l => l.id === locationToDelete);
+    if (!locationToDelete) return
+    const locToDelete = locations.find(l => l.id === locationToDelete)
     const { error } = await supabase.from('locations').delete().eq('id', locationToDelete)
     
     if (error) alert("Chyba při mazání: " + error.message)
     else {
-      if (locToDelete) notifyGoogleSheet('DELETE', null, locToDelete);
+      if (locToDelete) notifyGoogleSheet('DELETE', null, locToDelete)
       await fetchLocations()
     }
     setLocationToDelete(null)
   }
 
   const handleDeleteRequest = (id: string) => {
-    setLocationToDelete(id);
+    setLocationToDelete(id)
   }
 
   const handleEdit = (loc: LocationItem) => {
     setEditingId(loc.id)
     setFormData({
-      barva: loc.barva || '#a855f7',
+      barva: convertRawColorToNames(loc.barva),
       ic_rc: loc.ic_rc || '',
       nazev: loc.nazev || '',
       adresa: loc.adresa || '',
@@ -314,12 +351,10 @@ export default function Home() {
     setIsModalOpen(true)
   }
 
-  // --- AUTOMATICKÉ SKRYTÍ PANELU NA MOBILU PŘI VÝBĚRU ---
   const handleSelectLocationFromList = (loc: LocationItem) => {
     setTargetPosition([loc.lat, loc.lng])
     setActiveLocationId(loc.id)
     
-    // Pokud jsme na mobilu (obrazovka menší než 768px), panel po kliknutí zavřeme
     if (window.innerWidth < 768) {
       setIsSidebarOpen(false)
     }
@@ -342,7 +377,13 @@ export default function Home() {
   }
 
   if (filterColor !== 'all') {
-    processedLocations = processedLocations.filter(l => (l.barva || '').includes(filterColor))
+    processedLocations = processedLocations.filter(l => {
+      if (!l.barva) return false
+      const matchedPreset = PRESET_COLORS.find(p => p.label.toLowerCase() === filterColor.toLowerCase())
+      const targetHex = matchedPreset ? matchedPreset.hex.toLowerCase() : ''
+      const lBarvaLower = l.barva.toLowerCase()
+      return lBarvaLower.includes(filterColor.toLowerCase()) || (targetHex && lBarvaLower.includes(targetHex))
+    })
   }
 
   if (filterVisibleOnly && mapBounds) {
@@ -404,25 +445,28 @@ export default function Home() {
         </button>
       </div>
 
-      {/* OVERLAY POZADÍ PRO MOBIL (Ztmavení mapy pod otevřeným panelem) */}
       <div 
         onClick={() => setIsSidebarOpen(false)}
-        className={`
-          md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[15] transition-opacity duration-300
-          ${isSidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
-        `}
+        className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[15] transition-opacity duration-300"
+        style={{
+          opacity: isSidebarOpen ? 1 : 0,
+          pointerEvents: isSidebarOpen ? 'auto' : 'none'
+        }}
       />
 
-      <div className={`
-        absolute top-0 left-0 bottom-0 sm:top-4 sm:bottom-4 sm:left-4 z-20 
-        w-full sm:w-[350px] 
-        bg-zinc-900/95 backdrop-blur-xl 
-        shadow-[0_20px_50px_rgba(0,0,0,0.9)] 
-        rounded-none sm:rounded-2xl overflow-hidden flex flex-col 
-        border-0 sm:border border-zinc-800/80 
-        transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]
-        ${isSidebarOpen ? 'translate-x-0 opacity-100 pointer-events-auto' : '-translate-x-full opacity-0 pointer-events-none'}
-      `}>
+      {/* Boční panel řízený dedikovanou třídou z globals.css */}
+      <div 
+        className={`
+          sidebar-panel-container
+          ${isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'}
+          absolute top-0 left-0 bottom-0 sm:top-4 sm:bottom-4 sm:left-4 z-20 
+          w-full sm:w-[350px] 
+          bg-zinc-900/95 backdrop-blur-xl 
+          shadow-[0_20px_50px_rgba(0,0,0,0.9)] 
+          rounded-none sm:rounded-2xl overflow-hidden flex flex-col 
+          border-0 sm:border border-zinc-800/80 touch-auto
+        `}
+      >
         <div className="pt-6 sm:pt-4 px-4 pb-4 border-b border-zinc-800/80 bg-zinc-950/40 flex items-center justify-between shrink-0 sm:rounded-t-2xl pl-16">
           <div>
             <h1 className="text-base font-bold text-zinc-100 flex items-center gap-2">
@@ -457,15 +501,18 @@ export default function Home() {
                 {matchingSaved.length > 0 && (
                   <div className="p-1.5 border-b border-zinc-800">
                     <p className="text-[10px] uppercase font-bold text-zinc-500 px-2 py-1 tracking-wider">Moje uložená místa</p>
-                    {matchingSaved.map((loc) => (
-                      <div key={loc.id} onClick={() => { setSearch(loc.nazev || loc.adresa || ''); handleSelectLocationFromList(loc); setShowSearchSuggestions(false) }} className="p-2 hover:bg-zinc-800/90 rounded-lg cursor-pointer transition-colors flex items-center gap-2 text-xs">
-                        <div className="w-3 h-3 rounded-full shrink-0 border border-zinc-700" style={{ background: loc.barva?.split(',')[0] || '#a855f7' }} />
-                        <div className="overflow-hidden">
-                          <p className="font-semibold text-zinc-200 truncate">{loc.nazev || 'Bez názvu'}</p>
-                          <p className="text-[10px] text-zinc-400 truncate">{loc.adresa}</p>
+                    {matchingSaved.map((loc) => {
+                      const locColors = parseColorsToHexArray(loc.barva)
+                      return (
+                        <div key={loc.id} onClick={() => { setSearch(loc.nazev || loc.adresa || ''); handleSelectLocationFromList(loc); setShowSearchSuggestions(false) }} className="p-2 hover:bg-zinc-800/90 rounded-lg cursor-pointer transition-colors flex items-center gap-2 text-xs">
+                          <div className="w-3 h-3 rounded-full shrink-0 border border-zinc-700" style={{ background: locColors[0] || '#a855f7' }} />
+                          <div className="overflow-hidden">
+                            <p className="font-semibold text-zinc-200 truncate">{loc.nazev || 'Bez názvu'}</p>
+                            <p className="text-[10px] text-zinc-400 truncate">{loc.adresa}</p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
                 {searchSuggestions.length > 0 && (
@@ -504,8 +551,8 @@ export default function Home() {
                     <span>Všechny barvy</span>
                   ) : (
                     <>
-                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: PRESET_COLORS.find(c => c.hex === filterColor)?.hex }} />
-                      <span className="truncate">{PRESET_COLORS.find(c => c.hex === filterColor)?.label}</span>
+                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: PRESET_COLORS.find(c => c.label === filterColor)?.hex }} />
+                      <span className="truncate">{filterColor}</span>
                     </>
                   )}
                 </div>
@@ -521,8 +568,8 @@ export default function Home() {
                   </div>
                   {PRESET_COLORS.map(c => (
                     <div 
-                      key={c.hex}
-                      onClick={() => { setFilterColor(c.hex); setIsColorDropdownOpen(false); }}
+                      key={c.label}
+                      onClick={() => { setFilterColor(c.label); setIsColorDropdownOpen(false); }}
                       className="p-2.5 hover:bg-zinc-800/90 cursor-pointer text-[10px] uppercase font-semibold text-zinc-300 border-b border-zinc-800/50 last:border-0 flex items-center gap-2"
                     >
                       <div className="w-3 h-3 rounded-full border border-zinc-700 shrink-0" style={{ backgroundColor: c.hex }} />
@@ -555,8 +602,8 @@ export default function Home() {
             </div>
           ) : (
             processedLocations.map((loc) => {
-              const locColors = (loc.barva || '#a855f7').split(',');
-              const isExpanded = expandedId === loc.id;
+              const locColors = parseColorsToHexArray(loc.barva)
+              const isExpanded = expandedId === loc.id
 
               return (
                 <div 
@@ -589,44 +636,53 @@ export default function Home() {
                       )}
                     </div>
 
+                    {loc.co_chci && (
+                      <div className="my-2 p-2 bg-gradient-to-r from-purple-950/70 via-indigo-950/60 to-purple-950/70 border border-purple-500/60 rounded-lg shadow-[0_0_12px_rgba(168,85,247,0.2)]">
+                        <div className="text-[9px] uppercase tracking-wider font-extrabold text-purple-300 flex items-center gap-1 mb-0.5">
+                          <span>🎯</span> Co chci:
+                        </div>
+                        <p className="text-[11px] font-medium text-white leading-snug">
+                          {loc.co_chci}
+                        </p>
+                      </div>
+                    )}
+
                     <div className="pt-1.5 border-t border-zinc-800/60 flex justify-between items-center">
                       <button
                         type="button"
                         onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedId(isExpanded ? null : loc.id);
+                          e.stopPropagation()
+                          setExpandedId(isExpanded ? null : loc.id)
                         }}
                         className="text-[10px] font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer transition-colors"
                       >
-                        {isExpanded ? (
-                          <><span>Zobrazit méně</span><ChevronUp className="w-3 h-3" /></>
-                        ) : (
-                          <><span>Zobrazit více</span><ChevronDown className="w-3 h-3" /></>
-                        )}
+                        <span>{isExpanded ? 'Zobrazit méně' : 'Zobrazit více'}</span>
+                        <ChevronDown className={`w-3 h-3 transition-transform duration-300 ease-in-out ${isExpanded ? 'rotate-180' : 'rotate-0'}`} />
                       </button>
                     </div>
 
-                    {isExpanded && (
-                      <div className="mt-2.5 pt-2 border-t border-zinc-800/80 space-y-1.5 text-[11px] text-zinc-300">
-                        {loc.ic_rc && <div><span className="text-zinc-500 font-semibold">IČ/RČ:</span> {loc.ic_rc}</div>}
-                        {loc.firma && <div><span className="text-zinc-500 font-semibold">Firma:</span> {loc.firma}</div>}
-                        {loc.sleva && <div><span className="text-zinc-500 font-semibold">% Sleva:</span> {loc.sleva}%</div>}
-                        {loc.hwb && <div><span className="text-zinc-500 font-semibold">HWB:</span> {loc.hwb}</div>}
-                        {loc.kontaktni_osoba && (
-                          <div><span className="text-zinc-500 font-semibold">Kontakt:</span> {loc.kontaktni_osoba} {loc.kontaktni_telefon ? `(${loc.kontaktni_telefon})` : ''}</div>
-                        )}
-                        {loc.co_jsem_delal && <div><span className="text-zinc-500 font-semibold">Co jsem dělal:</span> {loc.co_jsem_delal}</div>}
-                        {loc.kdy_delal && <div><span className="text-zinc-500 font-semibold">Kdy dělal:</span> {formatDate(loc.kdy_delal)}</div>}
-                        {loc.co_chci && <div><span className="text-zinc-500 font-semibold">Co chci:</span> {loc.co_chci}</div>}
-                        {loc.kdy_chci && <div><span className="text-zinc-500 font-semibold">Kdy chci:</span> {formatDate(loc.kdy_chci)}</div>}
-                        {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Poznámky:</span> {loc.moje_poznamky}</div>}
-                        {loc.moje_fotka && (
-                          <div className="mt-2">
-                            <img src={loc.moje_fotka} alt="Fotka" className="w-full h-32 object-cover rounded-lg border border-zinc-800" />
-                          </div>
-                        )}
+                    <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100 mt-2.5' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'}`}>
+                      <div className="overflow-hidden">
+                        <div className="pt-2 border-t border-zinc-800/80 space-y-1.5 text-[11px] text-zinc-300">
+                          {loc.ic_rc && <div><span className="text-zinc-500 font-semibold">IČ/RČ:</span> {loc.ic_rc}</div>}
+                          {loc.firma && <div><span className="text-zinc-500 font-semibold">Firma:</span> {loc.firma}</div>}
+                          {loc.sleva && <div><span className="text-zinc-500 font-semibold">% Sleva:</span> {loc.sleva}%</div>}
+                          {loc.hwb && <div><span className="text-zinc-500 font-semibold">HWB:</span> {loc.hwb}</div>}
+                          {loc.kontaktni_osoba && (
+                            <div><span className="text-zinc-500 font-semibold">Kontakt:</span> {loc.kontaktni_osoba} {loc.kontaktni_telefon ? `(${loc.kontaktni_telefon})` : ''}</div>
+                          )}
+                          {loc.co_jsem_delal && <div><span className="text-zinc-500 font-semibold">Co jsem dělal:</span> {loc.co_jsem_delal}</div>}
+                          {loc.kdy_delal && <div><span className="text-zinc-500 font-semibold">Kdy dělal:</span> {formatDate(loc.kdy_delal)}</div>}
+                          {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Poznámky:</span> {loc.moje_poznamky}</div>}
+                          {loc.moje_fotka && (
+                            <div className="mt-2">
+                              <img src={loc.moje_fotka} alt="Fotka" className="w-full h-32 object-cover rounded-lg border border-zinc-800" />
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
+                    </div>
+
                   </div>
                 </div>
               )
@@ -672,7 +728,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL FORMULÁŘ */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm sm:p-4 overflow-hidden touch-none">
           <div className="bg-zinc-900 sm:border border-zinc-800 sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] max-w-2xl flex flex-col shadow-2xl overflow-hidden">
@@ -691,14 +746,16 @@ export default function Home() {
                 <label className="text-zinc-400 mb-2 block font-semibold text-[10px] uppercase tracking-wider">Příznaky (Max 4 barvy)</label>
                 <div className="flex flex-wrap gap-2.5">
                   {PRESET_COLORS.map(color => {
-                    const selectedColors = formData.barva ? formData.barva.split(',') : [];
-                    const isSelected = selectedColors.includes(color.hex);
-                    
+                    const selectedColors = formData.barva
+                      ? formData.barva.split(',').map(s => s.trim().toLowerCase())
+                      : []
+                    const isSelected = selectedColors.includes(color.label.toLowerCase()) || selectedColors.includes(color.hex.toLowerCase())
+
                     return (
                       <button
-                        key={color.hex}
+                        key={color.label}
                         type="button"
-                        onClick={() => toggleColor(color.hex)}
+                        onClick={() => toggleColor(color.label)}
                         className={`w-9 h-9 sm:w-8 sm:h-8 rounded-full border-2 transition-all cursor-pointer flex items-center justify-center ${isSelected ? 'border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.4)]' : 'border-transparent hover:scale-105'}`}
                         style={{ backgroundColor: color.hex }}
                         title={color.label}
@@ -713,7 +770,6 @@ export default function Home() {
               <div className="sm:col-span-2 relative mt-2">
                 <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Adresa (Vyhledávání) *</label>
                 <input required type="text" placeholder="Začni psát adresu..." value={formData.adresa} onChange={(e) => handleModalAddressChange(e.target.value)} onFocus={() => formData.adresa.length > 3 && setShowSuggestions(true)} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-[16px] sm:text-xs text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all appearance-none" />
-                
                 {showSuggestions && addressSuggestions.length > 0 && (
                   <div className="absolute top-[100%] left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
                     {addressSuggestions.map((sug, i) => (

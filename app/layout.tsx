@@ -11,12 +11,12 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Moje Mapa",
-  description: "Správa adres a mapa",
+  title: "Kolotoč",
+  description: "Kde sny ožívají",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Moje Mapa"
+    title: "Kolotoč"
   },
 };
 

@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { Edit3, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Edit3, Trash2, ChevronDown } from 'lucide-react'
 
 export type LocationItem = {
   id: string
@@ -33,6 +33,33 @@ export type MapBounds = {
   east: number
 }
 
+// Mapa slovních názvů barev na HEX kódy
+export const COLOR_MAP: { [key: string]: string } = {
+  'fialová': '#a855f7',
+  'červená': '#ef4444',
+  'zelená': '#22c55e',
+  'modrá': '#3b82f6',
+  'žlutá': '#eab308',
+  'oranžová': '#f97316',
+  'tyrkysová': '#06b6d4',
+  'růžová': '#ec4899',
+  'šedá': '#71717a'
+}
+
+// Bezpečný převodník slovního názvu nebo HEX kódu na HEX barvu
+export const resolveColorToHex = (colorStr: string): string => {
+  const trimmed = colorStr.trim()
+  if (trimmed.startsWith('#')) return trimmed
+  return COLOR_MAP[trimmed.toLowerCase()] || '#a855f7'
+}
+
+export const parseColorsToHexArray = (colorString?: string): string[] => {
+  if (!colorString) return ['#a855f7']
+  const parts = colorString.split(',').map(s => s.trim()).filter(Boolean)
+  if (parts.length === 0) return ['#a855f7']
+  return parts.map(resolveColorToHex)
+}
+
 const formatDate = (dateStr?: string) => {
   if (!dateStr) return ''
   const parts = dateStr.split('-')
@@ -43,15 +70,15 @@ const formatDate = (dateStr?: string) => {
 }
 
 const createPizzaIcon = (colorString?: string) => {
-  const colors = colorString ? colorString.split(',') : ['#a855f7'];
-  let bg = colors[0];
+  const colors = parseColorsToHexArray(colorString)
+  let bg = colors[0]
 
   if (colors.length === 2) {
-    bg = `conic-gradient(${colors[0]} 0% 50%, ${colors[1]} 50% 100%)`;
+    bg = `conic-gradient(${colors[0]} 0% 50%, ${colors[1]} 50% 100%)`
   } else if (colors.length === 3) {
-    bg = `conic-gradient(${colors[0]} 0% 33.33%, ${colors[1]} 33.33% 66.66%, ${colors[2]} 66.66% 100%)`;
+    bg = `conic-gradient(${colors[0]} 0% 33.33%, ${colors[1]} 33.33% 66.66%, ${colors[2]} 66.66% 100%)`
   } else if (colors.length >= 4) {
-    bg = `conic-gradient(${colors[0]} 0% 25%, ${colors[1]} 25% 50%, ${colors[2]} 50% 75%, ${colors[3]} 75% 100%)`;
+    bg = `conic-gradient(${colors[0]} 0% 25%, ${colors[1]} 25% 50%, ${colors[2]} 50% 75%, ${colors[3]} 75% 100%)`
   }
 
   const html = `
@@ -63,7 +90,7 @@ const createPizzaIcon = (colorString?: string) => {
       border: 2.5px solid white; 
       box-shadow: 0 3px 6px rgba(0,0,0,0.6);
     "></div>
-  `;
+  `
   
   return L.divIcon({
     className: "custom-pizza-marker bg-transparent border-0",
@@ -71,7 +98,7 @@ const createPizzaIcon = (colorString?: string) => {
     iconSize: [24, 24],
     iconAnchor: [12, 12],
     popupAnchor: [0, -14]
-  });
+  })
 }
 
 const userLocationIcon = L.divIcon({
@@ -84,7 +111,7 @@ const userLocationIcon = L.divIcon({
   `,
   iconSize: [32, 32],
   iconAnchor: [16, 16]
-});
+})
 
 function MapController({ 
   position, 
@@ -148,21 +175,21 @@ function BoundsHandler({ onBoundsChange }: { onBoundsChange?: (b: MapBounds) => 
   })
 
   const updateBounds = () => {
-    if (!onBoundsChange) return;
-    const b = map.getBounds();
+    if (!onBoundsChange) return
+    const b = map.getBounds()
     onBoundsChange({
       south: b.getSouth(),
       west: b.getWest(),
       north: b.getNorth(),
       east: b.getEast(),
-    });
+    })
   }
 
   useEffect(() => {
-    updateBounds();
+    updateBounds()
   }, [map])
 
-  return null;
+  return null
 }
 
 export default function MapComponent({ 
@@ -262,8 +289,8 @@ export default function MapComponent({
         <BoundsHandler onBoundsChange={onBoundsChange} />
 
         {locations.map((loc) => {
-          const locColors = (loc.barva || '#a855f7').split(',');
-          const isExpanded = expandedPopupId === loc.id;
+          const locColors = parseColorsToHexArray(loc.barva)
+          const isExpanded = expandedPopupId === loc.id
 
           return (
             <Marker 
@@ -288,8 +315,8 @@ export default function MapComponent({
                         <button 
                           type="button"
                           onClick={(e) => { 
-                            e.stopPropagation(); 
-                            if (onSelectLocation) onSelectLocation(loc); 
+                            e.stopPropagation() 
+                            if (onSelectLocation) onSelectLocation(loc) 
                           }} 
                           className="p-1 hover:text-purple-400 bg-zinc-800/80 hover:bg-zinc-700 rounded cursor-pointer transition-colors text-zinc-300" 
                           title="Upravit"
@@ -299,12 +326,10 @@ export default function MapComponent({
                         <button 
                           type="button"
                           onClick={(e) => { 
-                            e.stopPropagation(); 
-                            // Zavřeme pop-up, aby vizuálně nezůstal viset
-                            const marker = markerRefs.current[loc.id];
-                            if (marker) marker.closePopup();
-                            
-                            if (onDeleteLocation) onDeleteLocation(loc.id); 
+                            e.stopPropagation() 
+                            const marker = markerRefs.current[loc.id]
+                            if (marker) marker.closePopup()
+                            if (onDeleteLocation) onDeleteLocation(loc.id) 
                           }} 
                           className="p-1 hover:text-red-400 bg-zinc-800/80 hover:bg-zinc-700 rounded cursor-pointer transition-colors text-zinc-300" 
                           title="Smazat"
@@ -329,44 +354,53 @@ export default function MapComponent({
                       )}
                     </div>
 
+                    {loc.co_chci && (
+                      <div className="my-2 p-2 bg-gradient-to-r from-purple-950/70 via-indigo-950/60 to-purple-950/70 border border-purple-500/60 rounded-lg shadow-[0_0_12px_rgba(168,85,247,0.2)]">
+                        <div className="text-[9px] uppercase tracking-wider font-extrabold text-purple-300 flex items-center gap-1 mb-0.5">
+                          <span>🎯</span> Co chci:
+                        </div>
+                        <p className="text-[11px] font-medium text-white leading-snug">
+                          {loc.co_chci}
+                        </p>
+                      </div>
+                    )}
+
                     <div className="pt-1.5 border-t border-zinc-800/60 flex justify-between items-center">
                       <button
                         type="button"
                         onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedPopupId(isExpanded ? null : loc.id);
+                          e.stopPropagation()
+                          setExpandedPopupId(isExpanded ? null : loc.id)
                         }}
                         className="text-[10px] font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer transition-colors"
                       >
-                        {isExpanded ? (
-                          <><span>Zobrazit méně</span><ChevronUp className="w-3 h-3" /></>
-                        ) : (
-                          <><span>Zobrazit více</span><ChevronDown className="w-3 h-3" /></>
-                        )}
+                        <span>{isExpanded ? 'Zobrazit méně' : 'Zobrazit více'}</span>
+                        <ChevronDown className={`w-3 h-3 transition-transform duration-300 ease-in-out ${isExpanded ? 'rotate-180' : 'rotate-0'}`} />
                       </button>
                     </div>
 
-                    {isExpanded && (
-                      <div className="mt-2.5 pt-2 border-t border-zinc-800/80 space-y-1.5 text-[11px] text-zinc-300 max-h-48 overflow-y-auto custom-scrollbar">
-                        {loc.ic_rc && <div><span className="text-zinc-500 font-semibold">IČ/RČ:</span> {loc.ic_rc}</div>}
-                        {loc.firma && <div><span className="text-zinc-500 font-semibold">Firma:</span> {loc.firma}</div>}
-                        {loc.sleva && <div><span className="text-zinc-500 font-semibold">% Sleva:</span> {loc.sleva}%</div>}
-                        {loc.hwb && <div><span className="text-zinc-500 font-semibold">HWB:</span> {loc.hwb}</div>}
-                        {loc.kontaktni_osoba && (
-                          <div><span className="text-zinc-500 font-semibold">Kontakt:</span> {loc.kontaktni_osoba} {loc.kontaktni_telefon ? `(${loc.kontaktni_telefon})` : ''}</div>
-                        )}
-                        {loc.co_jsem_delal && <div><span className="text-zinc-500 font-semibold">Co jsem dělal:</span> {loc.co_jsem_delal}</div>}
-                        {loc.kdy_delal && <div><span className="text-zinc-500 font-semibold">Kdy dělal:</span> {formatDate(loc.kdy_delal)}</div>}
-                        {loc.co_chci && <div><span className="text-zinc-500 font-semibold">Co chci:</span> {loc.co_chci}</div>}
-                        {loc.kdy_chci && <div><span className="text-zinc-500 font-semibold">Kdy chci:</span> {formatDate(loc.kdy_chci)}</div>}
-                        {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Poznámky:</span> {loc.moje_poznamky}</div>}
-                        {loc.moje_fotka && (
-                          <div className="mt-2">
-                            <img src={loc.moje_fotka} alt="Fotka" className="w-full h-28 object-cover rounded-lg border border-zinc-800 shadow-md" />
-                          </div>
-                        )}
+                    <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100 mt-2.5' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'}`}>
+                      <div className="overflow-hidden">
+                        <div className="pt-2 border-t border-zinc-800/80 space-y-1.5 text-[11px] text-zinc-300 max-h-48 overflow-y-auto custom-scrollbar">
+                          {loc.ic_rc && <div><span className="text-zinc-500 font-semibold">IČ/RČ:</span> {loc.ic_rc}</div>}
+                          {loc.firma && <div><span className="text-zinc-500 font-semibold">Firma:</span> {loc.firma}</div>}
+                          {loc.sleva && <div><span className="text-zinc-500 font-semibold">% Sleva:</span> {loc.sleva}%</div>}
+                          {loc.hwb && <div><span className="text-zinc-500 font-semibold">HWB:</span> {loc.hwb}</div>}
+                          {loc.kontaktni_osoba && (
+                            <div><span className="text-zinc-500 font-semibold">Kontakt:</span> {loc.kontaktni_osoba} {loc.kontaktni_telefon ? `(${loc.kontaktni_telefon})` : ''}</div>
+                          )}
+                          {loc.co_jsem_delal && <div><span className="text-zinc-500 font-semibold">Co jsem dělal:</span> {loc.co_jsem_delal}</div>}
+                          {loc.kdy_delal && <div><span className="text-zinc-500 font-semibold">Kdy dělal:</span> {formatDate(loc.kdy_delal)}</div>}
+                          {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Poznámky:</span> {loc.moje_poznamky}</div>}
+                          {loc.moje_fotka && (
+                            <div className="mt-2">
+                              <img src={loc.moje_fotka} alt="Fotka" className="w-full h-28 object-cover rounded-lg border border-zinc-800 shadow-md" />
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
+                    </div>
+
                   </div>
 
                 </div>

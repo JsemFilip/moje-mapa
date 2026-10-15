@@ -38,3 +38,23 @@
 .custom-dark-popup .leaflet-popup-close-button:hover {
   color: #ffffff !important;
 }
+
+/* Hardwarově akcelerované plynulé vyjíždění a zajíždění bočního panelu */
+.sidebar-panel-container {
+  transition: transform 380ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+  will-change: transform;
+}
+
+.sidebar-panel-container.sidebar-open {
+  transform: translate3d(0, 0, 0) !important;
+}
+
+.sidebar-panel-container.sidebar-closed {
+  transform: translate3d(-100%, 0, 0) !important;
+}
+
+@media (min-width: 640px) {
+  .sidebar-panel-container.sidebar-closed {
+    transform: translate3d(calc(-100% - 2.5rem), 0, 0) !important;
+  }
+}
