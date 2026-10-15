@@ -1,8 +1,9 @@
 "use client"
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
+import { Edit3, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 
 export type LocationItem = {
   id: string
@@ -30,6 +31,15 @@ export type MapBounds = {
   west: number
   north: number
   east: number
+}
+
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return ''
+  const parts = dateStr.split('-')
+  if (parts.length === 3) {
+    return `${parts[2]}.${parts[1]}.${parts[0]}`
+  }
+  return dateStr
 }
 
 const createPizzaIcon = (colorString?: string) => {
@@ -64,8 +74,6 @@ const createPizzaIcon = (colorString?: string) => {
   });
 }
 
-// Opravená ikona pro moji polohu (bez "interactive" vlastnosti v DivIcon)
-// Přidáno "pointer-events-none" aby ignorovala klikání myší
 const userLocationIcon = L.divIcon({
   className: "user-location-marker bg-transparent border-0 pointer-events-none",
   html: `
@@ -81,19 +89,40 @@ const userLocationIcon = L.divIcon({
 function MapController({ 
   position, 
   targetPosition,
-  centerTrigger 
+  centerTrigger,
+  activeLocationId,
+  markerRefs
 }: { 
   position: [number, number] | null, 
   targetPosition?: [number, number] | null,
-  centerTrigger: number
+  centerTrigger: number,
+  activeLocationId?: string | null,
+  markerRefs: React.MutableRefObject<{ [key: string]: L.Marker | null }>
 }) {
   const map = useMap()
   
   useEffect(() => {
     if (targetPosition) {
-      map.flyTo(targetPosition, 16, { duration: 1.4 })
+      map.flyTo(targetPosition, 16, { duration: 1.1 })
+
+      const openPopupSafely = () => {
+        if (activeLocationId) {
+          const marker = markerRefs.current[activeLocationId]
+          if (marker && typeof marker.openPopup === 'function') {
+            marker.openPopup()
+          }
+        }
+      }
+
+      map.once('moveend', openPopupSafely)
+      const timer = setTimeout(openPopupSafely, 1200)
+
+      return () => {
+        map.off('moveend', openPopupSafely)
+        clearTimeout(timer)
+      }
     }
-  }, [targetPosition, map])
+  }, [targetPosition, activeLocationId, map, markerRefs])
 
   useEffect(() => {
     if (position && centerTrigger > 0) {
@@ -108,7 +137,6 @@ function MapController({
   }, [position, map])
 
   return position === null ? null : (
-    // Zde nastavíme interactive={false} na samotné komponentě Marker z React-Leaflet
     <Marker position={position} icon={userLocationIcon} interactive={false} />
   )
 }
@@ -140,17 +168,23 @@ function BoundsHandler({ onBoundsChange }: { onBoundsChange?: (b: MapBounds) => 
 export default function MapComponent({ 
   locations = [], 
   onSelectLocation, 
+  onDeleteLocation,
   targetPosition, 
   onBoundsChange,
-  centerTrigger = 0 
+  centerTrigger = 0,
+  activeLocationId = null
 }: { 
   locations?: LocationItem[], 
   onSelectLocation?: (loc: LocationItem) => void,
+  onDeleteLocation?: (id: string) => void,
   targetPosition?: [number, number] | null,
   onBoundsChange?: (bounds: MapBounds) => void,
-  centerTrigger?: number
+  centerTrigger?: number,
+  activeLocationId?: string | null
 }) {
   const [position, setPosition] = useState<[number, number] | null>(null)
+  const [expandedPopupId, setExpandedPopupId] = useState<string | null>(null)
+  const markerRefs = useRef<{ [key: string]: L.Marker | null }>({})
 
   useEffect(() => {
     if ("geolocation" in navigator) {
@@ -178,6 +212,34 @@ export default function MapComponent({
 
   return (
     <div className="relative h-full w-full z-0 bg-slate-100">
+      
+      <style>{`
+        .custom-dark-popup .leaflet-popup-content-wrapper {
+          background: transparent !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+          border: none !important;
+          border-radius: 0.75rem !important;
+        }
+        .custom-dark-popup .leaflet-popup-content {
+          margin: 0 !important;
+          line-height: inherit !important;
+          width: 290px !important;
+        }
+        .custom-dark-popup .leaflet-popup-tip-container {
+          margin-top: -1px !important;
+        }
+        .custom-dark-popup .leaflet-popup-tip {
+          background: #09090b !important;
+          border-left: 1px solid rgba(63, 63, 70, 0.8) !important;
+          border-bottom: 1px solid rgba(63, 63, 70, 0.8) !important;
+          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7) !important;
+        }
+        .custom-dark-popup .leaflet-popup-close-button {
+          display: none !important;
+        }
+      `}</style>
+
       <MapContainer 
         center={position} 
         zoom={13} 
@@ -190,37 +252,128 @@ export default function MapComponent({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <ZoomControl position="bottomright" />
-        <MapController position={position} targetPosition={targetPosition} centerTrigger={centerTrigger} />
+        <MapController 
+          position={position} 
+          targetPosition={targetPosition} 
+          centerTrigger={centerTrigger} 
+          activeLocationId={activeLocationId}
+          markerRefs={markerRefs}
+        />
         <BoundsHandler onBoundsChange={onBoundsChange} />
 
-        {locations.map((loc) => (
-          <Marker 
-            key={loc.id} 
-            position={[loc.lat, loc.lng]} 
-            icon={createPizzaIcon(loc.barva)}
-          >
-            <Popup>
-              <div className="p-1 min-w-[180px] text-zinc-900">
-                <h3 className="font-bold text-sm mb-1">{loc.nazev || 'Bez názvu'}</h3>
-                <p className="text-xs text-zinc-600 mb-1">{loc.adresa}</p>
-                {loc.kontaktni_osoba && (
-                  <p className="text-xs text-zinc-500">Kontakt: {loc.kontaktni_osoba} ({loc.kontaktni_telefon})</p>
-                )}
-                {loc.moje_fotka && (
-                  <img src={loc.moje_fotka} alt="Fotka" className="mt-2 rounded h-24 w-full object-cover" />
-                )}
-                {onSelectLocation && (
-                  <button 
-                    onClick={() => onSelectLocation(loc)} 
-                    className="mt-2 w-full text-center bg-purple-600 text-white text-xs py-1.5 rounded-lg hover:bg-purple-700 font-medium cursor-pointer"
-                  >
-                    Detail / Upravit
-                  </button>
-                )}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        {locations.map((loc) => {
+          const locColors = (loc.barva || '#a855f7').split(',');
+          const isExpanded = expandedPopupId === loc.id;
+
+          return (
+            <Marker 
+              key={loc.id} 
+              ref={(ref) => { if (ref) markerRefs.current[loc.id] = ref }}
+              position={[loc.lat, loc.lng]} 
+              icon={createPizzaIcon(loc.barva)}
+            >
+              <Popup className="custom-dark-popup" maxWidth={310} minWidth={280}>
+                <div className="p-3 bg-zinc-950/95 text-zinc-100 rounded-xl border border-zinc-800/80 shadow-2xl flex gap-3 relative overflow-hidden group">
+                  
+                  <div className="absolute left-0 top-0 bottom-0 w-1.5 opacity-90 flex flex-col">
+                    {locColors.map((c, i) => (
+                      <div key={i} className="flex-1" style={{ backgroundColor: c }} />
+                    ))}
+                  </div>
+
+                  <div className="flex-1 pl-1">
+                    <div className="flex justify-between items-start mb-1 pr-4">
+                      <h3 className="font-bold text-xs text-zinc-100">{loc.nazev || 'Bez názvu'}</h3>
+                      <div className="flex gap-1 items-center">
+                        <button 
+                          type="button"
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            if (onSelectLocation) onSelectLocation(loc); 
+                          }} 
+                          className="p-1 hover:text-purple-400 bg-zinc-800/80 hover:bg-zinc-700 rounded cursor-pointer transition-colors text-zinc-300" 
+                          title="Upravit"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            // Zavřeme pop-up, aby vizuálně nezůstal viset
+                            const marker = markerRefs.current[loc.id];
+                            if (marker) marker.closePopup();
+                            
+                            if (onDeleteLocation) onDeleteLocation(loc.id); 
+                          }} 
+                          className="p-1 hover:text-red-400 bg-zinc-800/80 hover:bg-zinc-700 rounded cursor-pointer transition-colors text-zinc-300" 
+                          title="Smazat"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <p className="text-[11px] text-zinc-400 mb-1.5 leading-snug">{loc.adresa}</p>
+                    
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {loc.kdy_chci && (
+                        <span className="px-1.5 py-0.5 bg-purple-900/40 text-purple-300 text-[9px] uppercase font-bold rounded border border-purple-700/50">
+                          Termín: {formatDate(loc.kdy_chci)}
+                        </span>
+                      )}
+                      {loc.kontaktni_osoba && (
+                        <span className="px-1.5 py-0.5 bg-blue-900/40 text-blue-300 text-[9px] uppercase font-bold rounded border border-blue-700/50">
+                          {loc.kontaktni_osoba}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="pt-1.5 border-t border-zinc-800/60 flex justify-between items-center">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedPopupId(isExpanded ? null : loc.id);
+                        }}
+                        className="text-[10px] font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        {isExpanded ? (
+                          <><span>Zobrazit méně</span><ChevronUp className="w-3 h-3" /></>
+                        ) : (
+                          <><span>Zobrazit více</span><ChevronDown className="w-3 h-3" /></>
+                        )}
+                      </button>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="mt-2.5 pt-2 border-t border-zinc-800/80 space-y-1.5 text-[11px] text-zinc-300 max-h-48 overflow-y-auto custom-scrollbar">
+                        {loc.ic_rc && <div><span className="text-zinc-500 font-semibold">IČ/RČ:</span> {loc.ic_rc}</div>}
+                        {loc.firma && <div><span className="text-zinc-500 font-semibold">Firma:</span> {loc.firma}</div>}
+                        {loc.sleva && <div><span className="text-zinc-500 font-semibold">% Sleva:</span> {loc.sleva}%</div>}
+                        {loc.hwb && <div><span className="text-zinc-500 font-semibold">HWB:</span> {loc.hwb}</div>}
+                        {loc.kontaktni_osoba && (
+                          <div><span className="text-zinc-500 font-semibold">Kontakt:</span> {loc.kontaktni_osoba} {loc.kontaktni_telefon ? `(${loc.kontaktni_telefon})` : ''}</div>
+                        )}
+                        {loc.co_jsem_delal && <div><span className="text-zinc-500 font-semibold">Co jsem dělal:</span> {loc.co_jsem_delal}</div>}
+                        {loc.kdy_delal && <div><span className="text-zinc-500 font-semibold">Kdy dělal:</span> {formatDate(loc.kdy_delal)}</div>}
+                        {loc.co_chci && <div><span className="text-zinc-500 font-semibold">Co chci:</span> {loc.co_chci}</div>}
+                        {loc.kdy_chci && <div><span className="text-zinc-500 font-semibold">Kdy chci:</span> {formatDate(loc.kdy_chci)}</div>}
+                        {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Poznámky:</span> {loc.moje_poznamky}</div>}
+                        {loc.moje_fotka && (
+                          <div className="mt-2">
+                            <img src={loc.moje_fotka} alt="Fotka" className="w-full h-28 object-cover rounded-lg border border-zinc-800 shadow-md" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              </Popup>
+            </Marker>
+          )
+        })}
       </MapContainer>
     </div>
   )
