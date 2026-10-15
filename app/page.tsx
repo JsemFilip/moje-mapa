@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import Auth from '@/components/Auth'
 import dynamic from 'next/dynamic'
 import { LocationItem, MapBounds } from '@/components/MapComponent'
-import { LogOut, List, MapPin, Plus, Menu, X, Trash2, Edit3, Search, Loader2, Camera, Filter, ArrowUpDown, Globe, Check, Eye } from 'lucide-react'
+import { LogOut, List, MapPin, Plus, Menu, X, Trash2, Edit3, Search, Loader2, Camera, Filter, ArrowUpDown, Globe, Check, Eye, LocateFixed } from 'lucide-react'
 
 const MapComponent = dynamic(() => import('@/components/MapComponent'), { 
   ssr: false,
@@ -69,11 +69,12 @@ export default function Home() {
   // Zobrazení/Poloha
   const [targetPosition, setTargetPosition] = useState<[number, number] | null>(null)
   const [mapBounds, setMapBounds] = useState<MapBounds | null>(null)
+  const [centerTrigger, setCenterTrigger] = useState(0)
   
   // Filtry a řazení
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name' | 'date_wanted'>('newest')
   const [filterColor, setFilterColor] = useState<string>('all')
-  const [filterVisibleOnly, setFilterVisibleOnly] = useState(false) // Zobrazit jen viditelné na mapě
+  const [filterVisibleOnly, setFilterVisibleOnly] = useState(false)
   
   // UI stavy
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -115,7 +116,6 @@ export default function Home() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Zavírání našeptávačů a roletek při kliknutí mimo
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
@@ -205,6 +205,27 @@ export default function Home() {
     reader.readAsDataURL(file)
   }
 
+  const notifyGoogleSheet = async (action: 'INSERT' | 'UPDATE' | 'DELETE', payload: any, oldPayload?: any) => {
+    const scriptUrl = process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL;
+    if (!scriptUrl) return; 
+
+    try {
+      await fetch(scriptUrl, {
+        method: 'POST',
+        body: JSON.stringify({
+          type: action,
+          record: payload,
+          old_record: oldPayload
+        }),
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8', 
+        }
+      });
+    } catch (e) {
+      console.error("Chyba při synchronizaci s Google Tabulkou", e);
+    }
+  }
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (formData.kontaktni_telefon && !/^[0-9]{9}$/.test(formData.kontaktni_telefon)) {
@@ -232,9 +253,18 @@ export default function Home() {
     const payload = { ...formData, lat, lng }
 
     if (editingId) {
-      await supabase.from('locations').update(payload).eq('id', editingId)
+      const oldLocation = locations.find(l => l.id === editingId);
+      const { data } = await supabase.from('locations').update(payload).eq('id', editingId).select()
+      
+      if (data && data[0]) {
+        notifyGoogleSheet('UPDATE', data[0], oldLocation);
+      }
     } else {
-      await supabase.from('locations').insert([payload])
+      const { data } = await supabase.from('locations').insert([payload]).select()
+      
+      if (data && data[0]) {
+        notifyGoogleSheet('INSERT', data[0]);
+      }
     }
 
     setSaving(false)
@@ -246,7 +276,14 @@ export default function Home() {
 
   const handleDelete = async (id: string) => {
     if (confirm("Opravdu chceš toto místo smazat?")) {
+      const locationToDelete = locations.find(l => l.id === id);
+      
       await supabase.from('locations').delete().eq('id', id)
+      
+      if (locationToDelete) {
+        notifyGoogleSheet('DELETE', null, locationToDelete);
+      }
+      
       fetchLocations()
     }
   }
@@ -282,7 +319,6 @@ export default function Home() {
 
   let processedLocations = [...locations]
 
-  // Filtrace podle textu
   if (search) {
     processedLocations = processedLocations.filter(l => 
       (l.nazev?.toLowerCase() || '').includes(search.toLowerCase()) ||
@@ -290,12 +326,10 @@ export default function Home() {
     )
   }
 
-  // Filtrace podle vybrané barvy
   if (filterColor !== 'all') {
     processedLocations = processedLocations.filter(l => (l.barva || '').includes(filterColor))
   }
 
-  // Filtrace podle toho, zda je místo aktuálně vidět na mapě
   if (filterVisibleOnly && mapBounds) {
     processedLocations = processedLocations.filter(l => 
       l.lat >= mapBounds.south && 
@@ -305,7 +339,6 @@ export default function Home() {
     )
   }
 
-  // Řazení
   processedLocations.sort((a, b) => {
     if (sortBy === 'name') return (a.nazev || '').localeCompare(b.nazev || '')
     if (sortBy === 'date_wanted') return (a.kdy_chci || '').localeCompare(b.kdy_chci || '')
@@ -328,20 +361,34 @@ export default function Home() {
       
       <div className="absolute inset-0 z-0">
         <MapComponent 
-          locations={locations} // Na mapu posíláme VŠECHNY uložené (aby puntíky nezmizely, pokud filtrujeme jen textem), nebo processedLocations, záleží na preferenci. Použijeme locations pro mapu a processedLocations pro seznam.
+          locations={locations}
           onSelectLocation={handleEdit} 
           targetPosition={targetPosition} 
           onBoundsChange={setMapBounds} 
+          centerTrigger={centerTrigger}
         />
       </div>
 
-      <button 
-        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-        className="absolute top-4 left-4 z-10 p-2.5 bg-zinc-900/90 backdrop-blur-md text-zinc-200 rounded-xl border border-zinc-800 shadow-xl cursor-pointer hover:bg-zinc-800 hover:text-white transition-all active:scale-95"
-      >
-        <Menu className="w-5 h-5 text-purple-400" />
-      </button>
+      {/* HORNI OVLÁDACÍ TLAČÍTKA VLEVO (z-10 místo z-30, aby byla pod panelem) */}
+      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
+        <button 
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="p-2.5 bg-zinc-900/90 backdrop-blur-md text-zinc-200 rounded-xl border border-zinc-800 shadow-xl cursor-pointer hover:bg-zinc-800 hover:text-white transition-all active:scale-95"
+          title="Otevřít/zavřít menu"
+        >
+          {isSidebarOpen ? <X className="w-5 h-5 text-purple-400" /> : <Menu className="w-5 h-5 text-purple-400" />}
+        </button>
 
+        <button 
+          onClick={() => setCenterTrigger(prev => prev + 1)}
+          className="p-2.5 bg-zinc-900/90 backdrop-blur-md text-zinc-200 rounded-xl border border-zinc-800 shadow-xl cursor-pointer hover:bg-zinc-800 hover:text-white transition-all active:scale-95"
+          title="Zpět na moji polohu"
+        >
+          <LocateFixed className="w-5 h-5 text-blue-400" />
+        </button>
+      </div>
+
+      {/* PANEL LEVÝ (z-20 leží nad tlačítky z-10) */}
       <div className={`
         absolute top-4 bottom-4 left-4 z-20 
         w-[calc(100vw-2rem)] sm:w-[350px] 
@@ -364,7 +411,6 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Nástroje: Hledání, Řazení, Filtry */}
         <div className="p-3 border-b border-zinc-800/50 space-y-2 shrink-0">
           <div ref={searchContainerRef} className="relative">
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-zinc-500" />
@@ -423,7 +469,6 @@ export default function Home() {
               </select>
             </div>
 
-            {/* VLASTNÍ BAREVNÝ DROPDOWN */}
             <div className="relative flex-1" ref={colorDropdownRef}>
               <div 
                 onClick={() => setIsColorDropdownOpen(!isColorDropdownOpen)}
@@ -465,7 +510,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Tlačítko filtru viditelnosti podle mapy */}
           <button
             onClick={() => setFilterVisibleOnly(!filterVisibleOnly)}
             className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-[10px] uppercase font-bold tracking-wide transition-all border cursor-pointer ${

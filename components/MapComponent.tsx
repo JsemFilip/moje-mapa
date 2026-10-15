@@ -64,35 +64,55 @@ const createPizzaIcon = (colorString?: string) => {
   });
 }
 
-const defaultLocationIcon = createPizzaIcon('#3b82f6')
+// Opravená ikona pro moji polohu (bez "interactive" vlastnosti v DivIcon)
+// Přidáno "pointer-events-none" aby ignorovala klikání myší
+const userLocationIcon = L.divIcon({
+  className: "user-location-marker bg-transparent border-0 pointer-events-none",
+  html: `
+    <div class="relative flex items-center justify-center w-8 h-8 pointer-events-none">
+      <div class="absolute inline-flex w-full h-full rounded-full bg-blue-500 opacity-40 animate-ping"></div>
+      <div class="relative inline-flex rounded-full w-4 h-4 bg-blue-600 border-2 border-white shadow-lg"></div>
+    </div>
+  `,
+  iconSize: [32, 32],
+  iconAnchor: [16, 16]
+});
 
-function LocationMarker({ position }: { position: [number, number] | null }) {
+function MapController({ 
+  position, 
+  targetPosition,
+  centerTrigger 
+}: { 
+  position: [number, number] | null, 
+  targetPosition?: [number, number] | null,
+  centerTrigger: number
+}) {
   const map = useMap()
   
-  useEffect(() => {
-    if (position) {
-      map.flyTo(position, 13)
-    }
-  }, [position, map])
-
-  return position === null ? null : (
-    <Marker position={position} icon={defaultLocationIcon}>
-      <Popup>Tvoje aktuální poloha</Popup>
-    </Marker>
-  )
-}
-
-function MapFlyController({ targetPosition }: { targetPosition?: [number, number] | null }) {
-  const map = useMap()
   useEffect(() => {
     if (targetPosition) {
       map.flyTo(targetPosition, 16, { duration: 1.4 })
     }
   }, [targetPosition, map])
-  return null
+
+  useEffect(() => {
+    if (position && centerTrigger > 0) {
+      map.flyTo(position, 15, { duration: 1 })
+    }
+  }, [centerTrigger, position, map])
+
+  useEffect(() => {
+    if (position && centerTrigger === 0) {
+      map.flyTo(position, 13)
+    }
+  }, [position, map])
+
+  return position === null ? null : (
+    // Zde nastavíme interactive={false} na samotné komponentě Marker z React-Leaflet
+    <Marker position={position} icon={userLocationIcon} interactive={false} />
+  )
 }
 
-// Handler pro sledování okrajů zobrazené mapy
 function BoundsHandler({ onBoundsChange }: { onBoundsChange?: (b: MapBounds) => void }) {
   const map = useMapEvents({
     moveend: () => updateBounds(),
@@ -117,11 +137,18 @@ function BoundsHandler({ onBoundsChange }: { onBoundsChange?: (b: MapBounds) => 
   return null;
 }
 
-export default function MapComponent({ locations = [], onSelectLocation, targetPosition, onBoundsChange }: { 
+export default function MapComponent({ 
+  locations = [], 
+  onSelectLocation, 
+  targetPosition, 
+  onBoundsChange,
+  centerTrigger = 0 
+}: { 
   locations?: LocationItem[], 
   onSelectLocation?: (loc: LocationItem) => void,
   targetPosition?: [number, number] | null,
-  onBoundsChange?: (bounds: MapBounds) => void
+  onBoundsChange?: (bounds: MapBounds) => void,
+  centerTrigger?: number
 }) {
   const [position, setPosition] = useState<[number, number] | null>(null)
 
@@ -131,6 +158,11 @@ export default function MapComponent({ locations = [], onSelectLocation, targetP
         (pos) => setPosition([pos.coords.latitude, pos.coords.longitude]),
         () => setPosition([50.0755, 14.4378])
       )
+      
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => setPosition([pos.coords.latitude, pos.coords.longitude])
+      )
+      return () => navigator.geolocation.clearWatch(watchId)
     } else {
       setPosition([50.0755, 14.4378])
     }
@@ -158,8 +190,7 @@ export default function MapComponent({ locations = [], onSelectLocation, targetP
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <ZoomControl position="bottomright" />
-        <LocationMarker position={position} />
-        <MapFlyController targetPosition={targetPosition} />
+        <MapController position={position} targetPosition={targetPosition} centerTrigger={centerTrigger} />
         <BoundsHandler onBoundsChange={onBoundsChange} />
 
         {locations.map((loc) => (
