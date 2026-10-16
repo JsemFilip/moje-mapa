@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import Auth from '@/components/Auth'
 import dynamic from 'next/dynamic'
 import type { LocationItem, MapBounds } from '@/components/MapComponent'
-import { LogOut, List, MapPin, Plus, Menu, X, Trash2, Edit3, Search, Loader2, Camera, Filter, ArrowUpDown, Globe, Check, Eye, LocateFixed, ChevronDown, AlertTriangle } from 'lucide-react'
+import { LogOut, List, MapPin, Plus, Menu, X, Trash2, Edit3, Search, Loader2, Camera, Filter, ArrowUpDown, Globe, Check, Eye, LocateFixed, ChevronDown, AlertTriangle, Phone } from 'lucide-react'
 
 const MapComponent = dynamic(() => import('@/components/MapComponent'), { 
   ssr: false,
@@ -651,12 +651,23 @@ export default function Home() {
                     </div>
                     <p className="text-[11px] text-zinc-400 mb-1.5 leading-snug">{loc.adresa}</p>
                     
-                    <div className="flex flex-wrap gap-1 mb-2">
+                    <div className="flex flex-wrap items-center gap-1 mb-2">
                       {loc.kdy_chci && (
                         <span className="px-1.5 py-0.5 bg-purple-900/40 text-purple-300 text-[9px] uppercase font-bold rounded border border-purple-700/50">Termín: {formatDate(loc.kdy_chci)}</span>
                       )}
                       {loc.kontaktni_osoba && (
                         <span className="px-1.5 py-0.5 bg-blue-900/40 text-blue-300 text-[9px] uppercase font-bold rounded border border-blue-700/50">{loc.kontaktni_osoba}</span>
+                      )}
+                      {loc.kontaktni_telefon && (
+                        <a
+                          href={`tel:${loc.kontaktni_telefon}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-1.5 py-0.5 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 hover:text-emerald-200 text-[9px] font-bold rounded border border-emerald-700/60 flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                          title={`Zavolat: ${loc.kontaktni_telefon}`}
+                        >
+                          <Phone className="w-2.5 h-2.5" />
+                          {loc.kontaktni_telefon}
+                        </a>
                       )}
                     </div>
 
@@ -692,9 +703,6 @@ export default function Home() {
                           {loc.firma && <div><span className="text-zinc-500 font-semibold">Firma:</span> {loc.firma}</div>}
                           {loc.sleva && <div><span className="text-zinc-500 font-semibold">% Sleva:</span> {loc.sleva}%</div>}
                           {loc.hwb && <div><span className="text-zinc-500 font-semibold">HWB:</span> {loc.hwb}</div>}
-                          {loc.kontaktni_osoba && (
-                            <div><span className="text-zinc-500 font-semibold">Kontakt:</span> {loc.kontaktni_osoba} {loc.kontaktni_telefon ? `(${loc.kontaktni_telefon})` : ''}</div>
-                          )}
                           {loc.co_jsem_delal && <div><span className="text-zinc-500 font-semibold">Co jsem dělal:</span> {loc.co_jsem_delal}</div>}
                           {loc.kdy_delal && <div><span className="text-zinc-500 font-semibold">Kdy dělal:</span> {formatDate(loc.kdy_delal)}</div>}
                           {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Poznámky:</span> {loc.moje_poznamky}</div>}

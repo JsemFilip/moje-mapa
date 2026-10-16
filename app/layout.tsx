@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import RegisterSW from "@/components/RegisterSW";
 
 // Uzamčení zoomování a přizpůsobení pro mobily
 export const viewport: Viewport = {
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Kolotoč"
+    title: "Kolotoč",
   },
 };
 
@@ -28,6 +29,7 @@ export default function RootLayout({
   return (
     <html lang="cs" className="fixed inset-0 overflow-hidden touch-none overscroll-none">
       <body className="fixed inset-0 bg-zinc-950 text-zinc-100 antialiased overflow-hidden overscroll-none">
+        <RegisterSW />
         {children}
       </body>
     </html>

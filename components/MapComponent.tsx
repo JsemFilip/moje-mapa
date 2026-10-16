@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { Edit3, Trash2, ChevronDown } from 'lucide-react'
+import { Edit3, Trash2, ChevronDown, Phone } from 'lucide-react'
 
 export type LocationItem = {
   id: string
@@ -127,7 +127,10 @@ function MapController({
   markerRefs: React.MutableRefObject<{ [key: string]: L.Marker | null }>
 }) {
   const map = useMap()
-  
+  const hasCenteredInitial = useRef(false)
+  const positionRef = useRef(position)
+  positionRef.current = position
+
   useEffect(() => {
     if (targetPosition) {
       map.flyTo(targetPosition, 16, { duration: 1.1 })
@@ -152,13 +155,14 @@ function MapController({
   }, [targetPosition, activeLocationId, map, markerRefs])
 
   useEffect(() => {
-    if (position && centerTrigger > 0) {
-      map.flyTo(position, 15, { duration: 1 })
+    if (centerTrigger > 0 && positionRef.current) {
+      map.flyTo(positionRef.current, 15, { duration: 1 })
     }
-  }, [centerTrigger, position, map])
+  }, [centerTrigger, map])
 
   useEffect(() => {
-    if (position && centerTrigger === 0) {
+    if (position && !hasCenteredInitial.current) {
+      hasCenteredInitial.current = true
       map.flyTo(position, 13)
     }
   }, [position, map])
@@ -252,6 +256,9 @@ export default function MapComponent({
           line-height: inherit !important;
           width: 290px !important;
         }
+        .custom-dark-popup .leaflet-popup-content p {
+          margin: 0 !important;
+        }
         .custom-dark-popup .leaflet-popup-tip-container {
           margin-top: -1px !important;
         }
@@ -264,8 +271,13 @@ export default function MapComponent({
         .custom-dark-popup .leaflet-popup-close-button {
           display: none !important;
         }
+        .custom-dark-popup a {
+          color: inherit !important;
+          text-decoration: none !important;
+        }
       `}</style>
 
+      {/* MapContainer: ponecháno výchozí chování (klik mimo bublinu ji ihned zavře) */}
       <MapContainer 
         center={position} 
         zoom={13} 
@@ -298,7 +310,13 @@ export default function MapComponent({
               position={[loc.lat, loc.lng]} 
               icon={createPizzaIcon(loc.barva)}
             >
-              <Popup className="custom-dark-popup" maxWidth={310} minWidth={280}>
+              {/* autoPan={false}: zabrání tomu, aby se mapa při posunu kousala a vracela zpět */}
+              <Popup 
+                className="custom-dark-popup" 
+                maxWidth={310} 
+                minWidth={280}
+                autoPan={false}
+              >
                 <div className="p-3 bg-zinc-950/95 text-zinc-100 rounded-xl border border-zinc-800/80 shadow-2xl flex gap-3 relative overflow-hidden group">
                   <div className="absolute left-0 top-0 bottom-0 w-1.5 opacity-90 flex flex-col">
                     {locColors.map((c, i) => (
@@ -307,7 +325,8 @@ export default function MapComponent({
                   </div>
 
                   <div className="flex-1 pl-1">
-                    <div className="flex justify-between items-start mb-1 pr-4">
+                    {/* Záhlaví s názvem a pouze ikonkami tužky a koše (bez křížku) */}
+                    <div className="flex justify-between items-start mb-1 pr-1">
                       <h3 className="font-bold text-xs text-zinc-100">{loc.nazev || 'Bez názvu'}</h3>
                       <div className="flex gap-1 items-center">
                         <button 
@@ -337,9 +356,10 @@ export default function MapComponent({
                       </div>
                     </div>
                     
-                    <p className="text-[11px] text-zinc-400 mb-1.5 leading-snug">{loc.adresa}</p>
+                    <p className="text-[11px] text-zinc-400 mb-1.5 leading-snug m-0">{loc.adresa}</p>
                     
-                    <div className="flex flex-wrap gap-1 mb-2">
+                    {/* Hlavní atributy se jménem a klikatelným telefonem */}
+                    <div className="flex flex-wrap items-center gap-1 mb-2">
                       {loc.kdy_chci && (
                         <span className="px-1.5 py-0.5 bg-purple-900/40 text-purple-300 text-[9px] uppercase font-bold rounded border border-purple-700/50">
                           Termín: {formatDate(loc.kdy_chci)}
@@ -350,14 +370,27 @@ export default function MapComponent({
                           {loc.kontaktni_osoba}
                         </span>
                       )}
+                      {loc.kontaktni_telefon && (
+                        <a
+                          href={`tel:${loc.kontaktni_telefon}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-1.5 py-0.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 hover:text-emerald-200 text-[9px] font-bold rounded border border-emerald-600/70 flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                          style={{ color: '#6ee7b7' }}
+                          title={`Zavolat: ${loc.kontaktni_telefon}`}
+                        >
+                          <Phone className="w-2.5 h-2.5" style={{ color: '#6ee7b7' }} />
+                          <span style={{ color: '#6ee7b7' }}>{loc.kontaktni_telefon}</span>
+                        </a>
+                      )}
                     </div>
 
+                    {/* VÝRAZNÝ RÁMEČEK "CO CHCI?" */}
                     {loc.co_chci && (
                       <div className="my-2 p-2 bg-gradient-to-r from-purple-950/70 via-indigo-950/60 to-purple-950/70 border border-purple-500/60 rounded-lg shadow-[0_0_12px_rgba(168,85,247,0.2)]">
                         <div className="text-[9px] uppercase tracking-wider font-extrabold text-purple-300 flex items-center gap-1 mb-0.5">
                           <span>🎯</span> Co chci:
                         </div>
-                        <p className="text-[11px] font-medium text-white leading-snug">
+                        <p className="text-[11px] font-medium text-white leading-snug m-0">
                           {loc.co_chci}
                         </p>
                       </div>
@@ -384,9 +417,6 @@ export default function MapComponent({
                           {loc.firma && <div><span className="text-zinc-500 font-semibold">Firma:</span> {loc.firma}</div>}
                           {loc.sleva && <div><span className="text-zinc-500 font-semibold">% Sleva:</span> {loc.sleva}%</div>}
                           {loc.hwb && <div><span className="text-zinc-500 font-semibold">HWB:</span> {loc.hwb}</div>}
-                          {loc.kontaktni_osoba && (
-                            <div><span className="text-zinc-500 font-semibold">Kontakt:</span> {loc.kontaktni_osoba} {loc.kontaktni_telefon ? `(${loc.kontaktni_telefon})` : ''}</div>
-                          )}
                           {loc.co_jsem_delal && <div><span className="text-zinc-500 font-semibold">Co jsem dělal:</span> {loc.co_jsem_delal}</div>}
                           {loc.kdy_delal && <div><span className="text-zinc-500 font-semibold">Kdy dělal:</span> {formatDate(loc.kdy_delal)}</div>}
                           {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Poznámky:</span> {loc.moje_poznamky}</div>}
