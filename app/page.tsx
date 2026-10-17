@@ -479,14 +479,14 @@ export default function Home() {
         }}
       />
 
+      {/* KLÍČOVÁ ÚPRAVA: Přidáno podmiňování `shadow-none` když je panel zavřený */}
       <div 
         className={`
           sidebar-panel-container
-          ${isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'}
+          ${isSidebarOpen ? 'sidebar-open shadow-[0_20px_50px_rgba(0,0,0,0.9)]' : 'sidebar-closed shadow-none'}
           absolute top-0 left-0 bottom-0 sm:top-4 sm:bottom-4 sm:left-4 z-20 
           w-full sm:w-[350px] 
           bg-zinc-900/95 backdrop-blur-xl 
-          shadow-[0_20px_50px_rgba(0,0,0,0.9)] 
           rounded-none sm:rounded-2xl overflow-hidden flex flex-col 
           border-0 sm:border border-zinc-800/80 touch-auto
         `}
@@ -662,11 +662,12 @@ export default function Home() {
                         <a
                           href={`tel:${loc.kontaktni_telefon}`}
                           onClick={(e) => e.stopPropagation()}
-                          className="px-1.5 py-0.5 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 hover:text-emerald-200 text-[9px] font-bold rounded border border-emerald-700/60 flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                          className="px-1.5 py-0.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 hover:text-emerald-200 text-[9px] font-bold rounded border border-emerald-600/70 flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                          style={{ color: '#6ee7b7' }}
                           title={`Zavolat: ${loc.kontaktni_telefon}`}
                         >
-                          <Phone className="w-2.5 h-2.5" />
-                          {loc.kontaktni_telefon}
+                          <Phone className="w-2.5 h-2.5" style={{ color: '#6ee7b7' }} />
+                          <span style={{ color: '#6ee7b7' }}>{loc.kontaktni_telefon}</span>
                         </a>
                       )}
                     </div>
@@ -703,6 +704,23 @@ export default function Home() {
                           {loc.firma && <div><span className="text-zinc-500 font-semibold">Firma:</span> {loc.firma}</div>}
                           {loc.sleva && <div><span className="text-zinc-500 font-semibold">% Sleva:</span> {loc.sleva}%</div>}
                           {loc.hwb && <div><span className="text-zinc-500 font-semibold">HWB:</span> {loc.hwb}</div>}
+                          {(loc.kontaktni_osoba || loc.kontaktni_telefon) && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-zinc-500 font-semibold">Kontakt:</span>
+                              <span>{loc.kontaktni_osoba}</span>
+                              {loc.kontaktni_telefon && (
+                                <a 
+                                  href={`tel:${loc.kontaktni_telefon}`} 
+                                  onClick={(e) => e.stopPropagation()} 
+                                  className="text-emerald-400 hover:text-emerald-300 hover:underline font-medium inline-flex items-center gap-1 ml-1 cursor-pointer"
+                                  style={{ color: '#34d399' }}
+                                >
+                                  <Phone className="w-2.5 h-2.5" style={{ color: '#34d399' }} />
+                                  <span style={{ color: '#34d399' }}>({loc.kontaktni_telefon})</span>
+                                </a>
+                              )}
+                            </div>
+                          )}
                           {loc.co_jsem_delal && <div><span className="text-zinc-500 font-semibold">Co jsem dělal:</span> {loc.co_jsem_delal}</div>}
                           {loc.kdy_delal && <div><span className="text-zinc-500 font-semibold">Kdy dělal:</span> {formatDate(loc.kdy_delal)}</div>}
                           {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Poznámky:</span> {loc.moje_poznamky}</div>}
@@ -802,6 +820,7 @@ export default function Home() {
               <div className="sm:col-span-2 relative mt-2">
                 <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Adresa (Vyhledávání) *</label>
                 <input required type="text" placeholder="Začni psát adresu..." value={formData.adresa} onChange={(e) => handleModalAddressChange(e.target.value)} onFocus={() => formData.adresa.length > 3 && setShowSuggestions(true)} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-[16px] sm:text-xs text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all appearance-none" />
+                
                 {showSuggestions && addressSuggestions.length > 0 && (
                   <div className="absolute top-[100%] left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
                     {addressSuggestions.map((sug, i) => (
