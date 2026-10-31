@@ -42,6 +42,7 @@ type FormDataState = {
   co_chci: string
   kdy_chci: string
   moje_poznamky: string
+  rozsahla_poznamka: string
   moje_fotka: string
 }
 
@@ -62,6 +63,7 @@ const emptyForm: FormDataState = {
   co_chci: '',
   kdy_chci: '',
   moje_poznamky: '',
+  rozsahla_poznamka: '',
   moje_fotka: ''
 }
 
@@ -124,7 +126,6 @@ export default function Home() {
 
   const [customColors, setCustomColors] = useState<CustomColor[]>(DEFAULT_COLORS)
   
-  // Sledování původního názvu barvy před editací a stav synchronizace
   const oldColorLabelRef = useRef<{ [colorId: string]: string }>({})
   const [isRenamingSync, setIsRenamingSync] = useState(false)
 
@@ -202,6 +203,25 @@ export default function Home() {
     if (!error && data) setLocations(data as LocationItem[])
   }
 
+  const handleUpdateLocationNote = async (id: string, newNote: string) => {
+    const oldLoc = locations.find(l => l.id === id)
+    if (!oldLoc) return
+    const updatedLoc = { ...oldLoc, rozsahla_poznamka: newNote }
+
+    setLocations(prev => prev.map(loc => loc.id === id ? { ...loc, rozsahla_poznamka: newNote } : loc))
+
+    const { error } = await supabase
+      .from('locations')
+      .update({ rozsahla_poznamka: newNote })
+      .eq('id', id)
+
+    if (!error) {
+      notifyGoogleSheet('UPDATE', updatedLoc, oldLoc)
+    } else {
+      alert("Chyba při ukládání poznámky: " + error.message)
+    }
+  }
+
   const handleAddColor = () => {
     const newId = Date.now().toString()
     oldColorLabelRef.current[newId] = 'Nová barva'
@@ -212,7 +232,6 @@ export default function Home() {
     setCustomColors(customColors.map(c => c.id === id ? { ...c, [field]: value } : c))
   }
 
-  // AUTOMATICKÉ PROPSÁNÍ PŘEJMENOVÁNÍ BARVY DO SUPABASE A GOOGLE SHEETS
   const handleColorRename = async (colorId: string, newLabel: string) => {
     const oldLabel = oldColorLabelRef.current[colorId] || ''
     const trimmedNew = newLabel.trim()
@@ -228,17 +247,14 @@ export default function Home() {
     const colorObj = customColors.find(c => c.id === colorId)
     const colorHex = colorObj?.hex.toLowerCase()
 
-    // Najdeme všechny adresy, které tuto barvu obsahují
     const affectedLocations = locations.filter(loc => {
       if (!loc.barva) return false
       const parts = loc.barva.split(',').map(s => s.trim().toLowerCase())
       return parts.includes(trimmedOld.toLowerCase()) || (colorHex && parts.includes(colorHex))
     })
 
-    // Aktualizace filtru, pokud byla tato barva vybrána
     setFilterColors(prev => prev.map(fc => fc.toLowerCase() === trimmedOld.toLowerCase() ? trimmedNew : fc))
 
-    // Aktualizace formuláře, pokud je otevřený
     if (formData.barva) {
       const formParts = formData.barva.split(',').map(s => s.trim())
       const updatedFormParts = formParts.map(p => 
@@ -262,13 +278,11 @@ export default function Home() {
       }
     })
 
-    // Okamžitá aktualizace stavu na frontendu
     setLocations(prev => prev.map(loc => {
       const found = updatedLocations.find(u => u.id === loc.id)
       return found ? found : loc
     }))
 
-    // Synchronizace do Supabase a Google Tabulky
     try {
       await Promise.all(
         updatedLocations.map(async (uLoc) => {
@@ -498,8 +512,14 @@ export default function Home() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!session?.user?.id) return alert("Chyba zabezpečení: Nejsi přihlášený.")
-    if (formData.kontaktni_telefon && !/^[0-9]{9}$/.test(formData.kontaktni_telefon)) return alert("Telefonní číslo musí mít přesně 9 číslic.")
-    if (!formData.adresa) return alert("Prosím zadej adresu.")
+    
+    // Povinné jsou pouze název a adresa
+    if (!formData.nazev?.trim()) return alert("Prosím zadej název objektu / místa.")
+    if (!formData.adresa?.trim()) return alert("Prosím zadej adresu.")
+    
+    if (formData.kontaktni_telefon && !/^[0-9]{9}$/.test(formData.kontaktni_telefon)) {
+      return alert("Telefonní číslo musí mít přesně 9 číslic.")
+    }
 
     setSaving(true)
     let lat = 0, lng = 0
@@ -518,7 +538,16 @@ export default function Home() {
       return alert("Chyba při hledání GPS.")
     }
 
-    const payload = { ...formData, lat, lng, user_id: session.user.id }
+    const payload = { 
+  ...formData, 
+  konec_smlouvy: formData.konec_smlouvy || null,
+  konec_hwb: formData.konec_hwb || null,
+  kdy_delal: formData.kdy_delal || null,
+  kdy_chci: formData.kdy_chci || null,
+  lat, 
+  lng, 
+  user_id: session.user.id 
+}
 
     if (editingId) {
       const oldLocation = locations.find(l => l.id === editingId)
@@ -571,6 +600,7 @@ export default function Home() {
       co_chci: loc.co_chci || '',
       kdy_chci: loc.kdy_chci || '',
       moje_poznamky: loc.moje_poznamky || '',
+      rozsahla_poznamka: loc.rozsahla_poznamka || '',
       moje_fotka: loc.moje_fotka || ''
     })
     setIsModalOpen(true)
@@ -642,6 +672,7 @@ export default function Home() {
           customColors={customColors}
           onSelectLocation={handleEdit} 
           onDeleteLocation={handleDeleteRequest}
+          onUpdateNote={handleUpdateLocationNote}
           targetPosition={targetPosition} 
           onBoundsChange={setMapBounds} 
           centerTrigger={centerTrigger}
@@ -997,7 +1028,15 @@ export default function Home() {
                           {loc.hwb && <div><span className="text-zinc-500 font-semibold">HWB:</span> {loc.hwb}</div>}
                           {loc.co_jsem_delal && <div><span className="text-zinc-500 font-semibold">Co jsem dělal:</span> {loc.co_jsem_delal}</div>}
                           {loc.kdy_delal && <div><span className="text-zinc-500 font-semibold">Kdy dělal:</span> {formatDate(loc.kdy_delal)}</div>}
-                          {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Poznámky:</span> {loc.moje_poznamky}</div>}
+                          {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Rychlá poznámka:</span> {loc.moje_poznamky}</div>}
+                          {loc.rozsahla_poznamka && (
+                            <div className="mt-2 p-2 bg-zinc-950/80 rounded-lg border border-zinc-800">
+                              <span className="text-zinc-500 font-semibold mb-1 block">Rozsáhlá poznámka:</span>
+                              <div className="whitespace-pre-wrap leading-relaxed">
+                                {loc.rozsahla_poznamka}
+                              </div>
+                            </div>
+                          )}
                           {loc.moje_fotka && (
                             <div className="mt-2">
                               <img src={loc.moje_fotka} alt="Fotka" className="w-full h-32 object-cover rounded-lg border border-zinc-800" />
@@ -1352,9 +1391,18 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* 1. POVINNÉ POLE: Adresa */}
               <div className="sm:col-span-2 relative mt-2">
                 <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Adresa (Vyhledávání) *</label>
-                <input required type="text" placeholder="Začni psát adresu..." value={formData.adresa} onChange={(e) => handleModalAddressChange(e.target.value)} onFocus={() => formData.adresa.length > 3 && setShowSuggestions(true)} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-[16px] sm:text-xs text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all appearance-none" />
+                <input 
+                  required 
+                  type="text" 
+                  placeholder="Začni psát adresu..." 
+                  value={formData.adresa} 
+                  onChange={(e) => handleModalAddressChange(e.target.value)} 
+                  onFocus={() => formData.adresa.length > 3 && setShowSuggestions(true)} 
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-[16px] sm:text-xs text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all appearance-none" 
+                />
                 
                 {showSuggestions && addressSuggestions.length > 0 && (
                   <div className="absolute top-[100%] left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
@@ -1367,11 +1415,20 @@ export default function Home() {
                 )}
               </div>
 
+              {/* 2. POVINNÉ POLE: Název objektu / Místa */}
               <div>
-                <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Název objektu / Místa</label>
-                <input type="text" value={formData.nazev} onChange={e => setFormData({...formData, nazev: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-[16px] sm:text-xs text-white appearance-none" />
+                <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Název objektu / Místa *</label>
+                <input 
+                  required 
+                  type="text" 
+                  value={formData.nazev} 
+                  onChange={e => setFormData({...formData, nazev: e.target.value})} 
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-[16px] sm:text-xs text-white appearance-none focus:border-purple-500" 
+                  placeholder="Např. Restaurace U Lípy"
+                />
               </div>
 
+              {/* VŠECHNA OSTATNÍ POLE JSOU NEPOVINNÁ */}
               <div>
                 <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">IČ / RČ</label>
                 <input type="text" value={formData.ic_rc} onChange={e => setFormData({...formData, ic_rc: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-[16px] sm:text-xs text-white appearance-none" />
@@ -1386,17 +1443,16 @@ export default function Home() {
                 </select>
               </div>
 
-              {formData.firma === 'Ano' && (
-                <div className="animate-in fade-in duration-200">
-                  <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Konec smlouvy</label>
-                  <input 
-                    type="date" 
-                    value={formData.konec_smlouvy} 
-                    onChange={e => setFormData({...formData, konec_smlouvy: e.target.value})} 
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-[16px] sm:text-xs text-white [color-scheme:dark] cursor-pointer appearance-none" 
-                  />
-                </div>
-              )}
+              {/* Konec smlouvy: ZOBRAZENO VŽDY */}
+              <div>
+                <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Konec smlouvy</label>
+                <input 
+                  type="date" 
+                  value={formData.konec_smlouvy} 
+                  onChange={e => setFormData({...formData, konec_smlouvy: e.target.value})} 
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-[16px] sm:text-xs text-white [color-scheme:dark] cursor-pointer appearance-none" 
+                />
+              </div>
 
               <div>
                 <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">% Sleva? (0-40)</label>
@@ -1408,17 +1464,16 @@ export default function Home() {
                 <input type="number" value={formData.hwb} onChange={e => setFormData({...formData, hwb: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-[16px] sm:text-xs text-white appearance-none" />
               </div>
 
-              {formData.hwb && Number(formData.hwb) !== 0 && (
-                <div className="animate-in fade-in duration-200">
-                  <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Konec HWB</label>
-                  <input 
-                    type="date" 
-                    value={formData.konec_hwb} 
-                    onChange={e => setFormData({...formData, konec_hwb: e.target.value})} 
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-[16px] sm:text-xs text-white [color-scheme:dark] cursor-pointer appearance-none" 
-                  />
-                </div>
-              )}
+              {/* Konec HWB: ZOBRAZENO VŽDY */}
+              <div>
+                <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Konec HWB</label>
+                <input 
+                  type="date" 
+                  value={formData.konec_hwb} 
+                  onChange={e => setFormData({...formData, konec_hwb: e.target.value})} 
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-[16px] sm:text-xs text-white [color-scheme:dark] cursor-pointer appearance-none" 
+                />
+              </div>
 
               <div>
                 <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Kontaktní osoba</label>
@@ -1454,8 +1509,13 @@ export default function Home() {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Moje poznámky</label>
-                <textarea rows={2} value={formData.moje_poznamky} onChange={e => setFormData({...formData, moje_poznamky: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-[16px] sm:text-xs text-white appearance-none" />
+                <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Rychlá poznámka</label>
+                <input type="text" value={formData.moje_poznamky} onChange={e => setFormData({...formData, moje_poznamky: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-[16px] sm:text-xs text-white appearance-none" placeholder="Krátká poznámka..." />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-zinc-400 mb-1.5 block font-semibold text-[10px] uppercase tracking-wider">Rozsáhlá poznámka</label>
+                <textarea rows={5} value={formData.rozsahla_poznamka} onChange={e => setFormData({...formData, rozsahla_poznamka: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-[16px] sm:text-xs text-white leading-relaxed appearance-none" placeholder="Libovolně dlouhý text, podporuje odřádkování..." />
               </div>
 
               <div className="sm:col-span-2 mt-2 p-4 bg-zinc-950/50 rounded-xl border border-zinc-800/50 flex flex-col sm:flex-row items-center gap-4 shrink-0">

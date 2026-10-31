@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { Edit3, Trash2, ChevronDown, Phone } from 'lucide-react'
+import { Edit3, Trash2, ChevronDown, Phone, FileText, Check, Loader2 } from 'lucide-react'
 
 export type LocationItem = {
   id: string
@@ -23,6 +23,7 @@ export type LocationItem = {
   co_chci?: string
   kdy_chci?: string
   moje_poznamky?: string
+  rozsahla_poznamka?: string
   moje_fotka?: string
   lat: number
   lng: number
@@ -179,11 +180,126 @@ function BoundsHandler({ onBoundsChange }: { onBoundsChange?: (b: MapBounds) => 
   return null
 }
 
+function LocationNoteWindow({
+  locationId,
+  initialNote = '',
+  onSaveNote,
+  onClosePopup,
+  getPopupInstance
+}: {
+  locationId: string,
+  initialNote?: string,
+  onSaveNote?: (id: string, note: string) => Promise<void> | void,
+  onClosePopup?: () => void,
+  getPopupInstance?: () => L.Popup | null
+}) {
+  const [note, setNote] = useState(initialNote)
+  const [saving, setSaving] = useState(false)
+  const isDirty = note !== initialNote
+
+  useEffect(() => {
+    setNote(initialNote)
+  }, [initialNote])
+
+  // Zabrání zavření popupu při kliknutí na mapu nebo Esc, pokud jsou v textu neuložené změny
+  useEffect(() => {
+    const popup = getPopupInstance ? getPopupInstance() : null
+    if (popup) {
+      popup.options.closeOnClick = !isDirty
+      popup.options.closeOnEscapeKey = !isDirty
+      popup.options.autoClose = !isDirty
+    }
+  }, [isDirty, getPopupInstance])
+
+  const handleSave = async () => {
+    if (!onSaveNote || !isDirty) return
+    setSaving(true)
+    try {
+      await onSaveNote(locationId, note)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCancel = () => {
+    setNote(initialNote)
+    const popup = getPopupInstance ? getPopupInstance() : null
+    if (popup) {
+      popup.options.closeOnClick = true
+      popup.options.closeOnEscapeKey = true
+      popup.options.autoClose = true
+    }
+    if (onClosePopup) {
+      onClosePopup()
+    }
+  }
+
+  return (
+    <div 
+      className="w-[280px] sm:w-[320px] p-3 bg-zinc-950/95 text-zinc-100 rounded-xl border border-zinc-800/80 shadow-2xl flex flex-col gap-2 relative pointer-events-auto"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2">
+        <span className="text-xs font-bold text-zinc-100 flex items-center gap-1.5">
+          <FileText className="w-3.5 h-3.5 text-purple-400" />
+          Rozsáhlá poznámka
+        </span>
+        <div className="text-[10px] font-semibold">
+          {saving ? (
+            <span className="text-purple-400 flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" /> Ukládám
+            </span>
+          ) : isDirty ? (
+            <span className="text-amber-400">Neuloženo</span>
+          ) : (
+            <span className="text-emerald-400 flex items-center gap-1">
+              <Check className="w-3 h-3" /> Uloženo
+            </span>
+          )}
+        </div>
+      </div>
+
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        onKeyDown={(e) => e.stopPropagation()}
+        onKeyUp={(e) => e.stopPropagation()}
+        placeholder="Napiš rozsáhlou poznámku..."
+        rows={7}
+        className="w-full bg-zinc-900/90 border border-zinc-800 rounded-lg p-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 leading-relaxed custom-scrollbar whitespace-pre-wrap resize-y min-h-[140px] max-h-[280px]"
+      />
+
+      <div className="flex justify-end items-center gap-2 pt-2 border-t border-zinc-800/80">
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={saving}
+          className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+        >
+          Zrušit
+        </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving || !isDirty}
+          className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-purple-600/20 active:scale-95"
+        >
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          Uložit
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function MapComponent({ 
   locations = [], 
   customColors = [],
   onSelectLocation, 
   onDeleteLocation,
+  onUpdateNote,
   targetPosition, 
   onBoundsChange,
   centerTrigger = 0,
@@ -193,6 +309,7 @@ export default function MapComponent({
   customColors?: CustomColor[],
   onSelectLocation?: (loc: LocationItem) => void,
   onDeleteLocation?: (id: string) => void,
+  onUpdateNote?: (id: string, note: string) => Promise<void> | void,
   targetPosition?: [number, number] | null,
   onBoundsChange?: (bounds: MapBounds) => void,
   centerTrigger?: number,
@@ -201,6 +318,7 @@ export default function MapComponent({
   const [position, setPosition] = useState<[number, number] | null>(null)
   const [expandedPopupId, setExpandedPopupId] = useState<string | null>(null)
   const markerRefs = useRef<{ [key: string]: L.Marker | null }>({})
+  const popupRefs = useRef<{ [key: string]: L.Popup | null }>({})
 
   useEffect(() => {
     if (typeof window !== "undefined" && "geolocation" in navigator) {
@@ -228,11 +346,33 @@ export default function MapComponent({
   return (
     <div className="relative h-full w-full z-0 bg-slate-100">
       <style>{`
-        .custom-dark-popup .leaflet-popup-content-wrapper { background: transparent !important; box-shadow: none !important; padding: 0 !important; border: none !important; border-radius: 0.75rem !important; }
-        .custom-dark-popup .leaflet-popup-content { margin: 0 !important; line-height: inherit !important; width: 290px !important; }
+        .custom-dark-popup {
+          overflow: visible !important;
+        }
+        .custom-dark-popup .leaflet-popup-content-wrapper { 
+          background: transparent !important; 
+          box-shadow: none !important; 
+          padding: 0 !important; 
+          border: none !important; 
+          border-radius: 0.75rem !important; 
+          overflow: visible !important;
+        }
+        .custom-dark-popup .leaflet-popup-content { 
+          margin: 0 !important; 
+          line-height: inherit !important; 
+          width: 290px !important; 
+          overflow: visible !important;
+        }
         .custom-dark-popup .leaflet-popup-content p { margin: 0 !important; }
-        .custom-dark-popup .leaflet-popup-tip-container { margin-top: -1px !important; }
-        .custom-dark-popup .leaflet-popup-tip { background: #09090b !important; border-left: 1px solid rgba(63, 63, 70, 0.8) !important; border-bottom: 1px solid rgba(63, 63, 70, 0.8) !important; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7) !important; }
+        .custom-dark-popup .leaflet-popup-tip-container { 
+          margin-top: -1px !important; 
+        }
+        .custom-dark-popup .leaflet-popup-tip { 
+          background: #09090b !important; 
+          border-left: 1px solid rgba(63, 63, 70, 0.8) !important; 
+          border-bottom: 1px solid rgba(63, 63, 70, 0.8) !important; 
+          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7) !important; 
+        }
         .custom-dark-popup .leaflet-popup-close-button { display: none !important; }
         .custom-dark-popup a { color: inherit !important; text-decoration: none !important; }
       `}</style>
@@ -255,92 +395,120 @@ export default function MapComponent({
         {locations.map((loc) => {
           const locColors = parseColorsToHexArray(loc.barva, customColors)
           const isExpanded = expandedPopupId === loc.id
+          const hasExtendedNote = Boolean(loc.rozsahla_poznamka && loc.rozsahla_poznamka.trim().length > 0)
 
           return (
             <Marker key={loc.id} ref={(ref) => { if (ref) markerRefs.current[loc.id] = ref }} position={[loc.lat, loc.lng]} icon={createPizzaIcon(loc.barva, customColors)}>
-              <Popup className="custom-dark-popup" maxWidth={310} minWidth={280} autoPan={false}>
-                <div className="p-3 bg-zinc-950/95 text-zinc-100 rounded-xl border border-zinc-800/80 shadow-2xl flex gap-3 relative overflow-hidden group">
-                  <div className="absolute left-0 top-0 bottom-0 w-1.5 opacity-90 flex flex-col">
-                    {locColors.map((c, i) => (
-                      <div key={i} className="flex-1" style={{ backgroundColor: c }} />
-                    ))}
-                  </div>
-
-                  <div className="flex-1 pl-1">
-                    <div className="flex justify-between items-start mb-1 pr-1">
-                      <h3 className="font-bold text-xs text-zinc-100">{loc.nazev || 'Bez názvu'}</h3>
-                      <div className="flex gap-1 items-center">
-                        <button type="button" onClick={(e) => { e.stopPropagation(); if (onSelectLocation) onSelectLocation(loc) }} className="p-1 hover:text-purple-400 bg-zinc-800/80 hover:bg-zinc-700 rounded cursor-pointer transition-colors text-zinc-300" title="Upravit">
-                          <Edit3 className="w-3 h-3" />
-                        </button>
-                        <button type="button" onClick={(e) => { e.stopPropagation(); const marker = markerRefs.current[loc.id]; if (marker) marker.closePopup(); if (onDeleteLocation) onDeleteLocation(loc.id) }} className="p-1 hover:text-red-400 bg-zinc-800/80 hover:bg-zinc-700 rounded cursor-pointer transition-colors text-zinc-300" title="Smazat">
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <p className="text-[11px] text-zinc-400 mb-1.5 leading-snug m-0">{loc.adresa}</p>
-                    
-                    {/* Hlavní štítky viditelné na první pohled */}
-                    <div className="flex flex-wrap items-center gap-1 mb-2">
-                      {loc.kdy_chci && (
-                        <span className="px-1.5 py-0.5 bg-purple-900/40 text-purple-300 text-[9px] uppercase font-bold rounded border border-purple-700/50">
-                          Termín: {formatDate(loc.kdy_chci)}
-                        </span>
-                      )}
-                      {loc.kontaktni_osoba && (
-                        <span className="px-1.5 py-0.5 bg-blue-900/40 text-blue-300 text-[9px] uppercase font-bold rounded border border-blue-700/50">
-                          {loc.kontaktni_osoba}
-                        </span>
-                      )}
-                      {loc.kontaktni_telefon && (
-                        <a href={`tel:${loc.kontaktni_telefon}`} onClick={(e) => e.stopPropagation()} className="px-1.5 py-0.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 hover:text-emerald-200 text-[9px] font-bold rounded border border-emerald-600/70 flex items-center gap-1 cursor-pointer transition-colors shadow-sm" style={{ color: '#6ee7b7' }}>
-                          <Phone className="w-2.5 h-2.5" style={{ color: '#6ee7b7' }} />
-                          <span style={{ color: '#6ee7b7' }}>{loc.kontaktni_telefon}</span>
-                        </a>
-                      )}
-                      {loc.konec_smlouvy && (
-                        <span className="px-1.5 py-0.5 bg-amber-950/60 text-amber-300 text-[9px] uppercase font-bold rounded border border-amber-700/60">
-                          Konec smlouvy: {formatDate(loc.konec_smlouvy)}
-                        </span>
-                      )}
-                      {loc.konec_hwb && (
-                        <span className="px-1.5 py-0.5 bg-cyan-950/60 text-cyan-300 text-[9px] uppercase font-bold rounded border border-cyan-700/60">
-                          Konec HWB: {formatDate(loc.konec_hwb)}
-                        </span>
-                      )}
+              <Popup 
+                ref={(ref) => { if (ref) popupRefs.current[loc.id] = ref }}
+                className="custom-dark-popup" 
+                maxWidth={320} 
+                minWidth={280} 
+                autoPan={false}
+              >
+                {/* Obal popupu: přesně 290px pro umístění zobáčku pod levým oknem */}
+                <div className="relative w-[280px] sm:w-[290px]">
+                  
+                  {/* Hlavní okno záznamu */}
+                  <div className="w-[280px] sm:w-[290px] p-3 bg-zinc-950/95 text-zinc-100 rounded-xl border border-zinc-800/80 shadow-2xl flex gap-3 relative overflow-hidden group">
+                    <div className="absolute left-0 top-0 bottom-0 w-1.5 opacity-90 flex flex-col">
+                      {locColors.map((c, i) => (
+                        <div key={i} className="flex-1" style={{ backgroundColor: c }} />
+                      ))}
                     </div>
 
-                    {loc.co_chci && (
-                      <div className="my-2 p-2 bg-gradient-to-r from-purple-950/70 via-indigo-950/60 to-purple-950/70 border border-purple-500/60 rounded-lg shadow-[0_0_12px_rgba(168,85,247,0.2)]">
-                        <div className="text-[9px] uppercase tracking-wider font-extrabold text-purple-300 flex items-center gap-1 mb-0.5"><span>🎯</span> Co chci:</div>
-                        <p className="text-[11px] font-medium text-white leading-snug m-0">{loc.co_chci}</p>
-                      </div>
-                    )}
-
-                    <div className="pt-1.5 border-t border-zinc-800/60 flex justify-between items-center">
-                      <button type="button" onClick={(e) => { e.stopPropagation(); setExpandedPopupId(isExpanded ? null : loc.id) }} className="text-[10px] font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer transition-colors">
-                        <span>{isExpanded ? 'Zobrazit méně' : 'Zobrazit více'}</span>
-                        <ChevronDown className={`w-3 h-3 transition-transform duration-300 ease-in-out ${isExpanded ? 'rotate-180' : 'rotate-0'}`} />
-                      </button>
-                    </div>
-
-                    <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100 mt-2.5' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'}`}>
-                      <div className="overflow-hidden">
-                        <div className="pt-2 border-t border-zinc-800/80 space-y-1.5 text-[11px] text-zinc-300 max-h-48 overflow-y-auto custom-scrollbar">
-                          {loc.ic_rc && <div><span className="text-zinc-500 font-semibold">IČ/RČ:</span> {loc.ic_rc}</div>}
-                          {loc.firma && <div><span className="text-zinc-500 font-semibold">Firma:</span> {loc.firma}</div>}
-                          {loc.sleva && <div><span className="text-zinc-500 font-semibold">% Sleva:</span> {loc.sleva}%</div>}
-                          {loc.hwb && <div><span className="text-zinc-500 font-semibold">HWB:</span> {loc.hwb}</div>}
-                          {loc.co_jsem_delal && <div><span className="text-zinc-500 font-semibold">Co jsem dělal:</span> {loc.co_jsem_delal}</div>}
-                          {loc.kdy_delal && <div><span className="text-zinc-500 font-semibold">Kdy dělal:</span> {formatDate(loc.kdy_delal)}</div>}
-                          {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Poznámky:</span> {loc.moje_poznamky}</div>}
-                          {loc.moje_fotka && <div className="mt-2"><img src={loc.moje_fotka} alt="Fotka" className="w-full h-28 object-cover rounded-lg border border-zinc-800 shadow-md" /></div>}
+                    <div className="flex-1 pl-1">
+                      <div className="flex justify-between items-start mb-1 pr-1">
+                        <h3 className="font-bold text-xs text-zinc-100">{loc.nazev || 'Bez názvu'}</h3>
+                        <div className="flex gap-1 items-center">
+                          <button type="button" onClick={(e) => { e.stopPropagation(); if (onSelectLocation) onSelectLocation(loc) }} className="p-1 hover:text-purple-400 bg-zinc-800/80 hover:bg-zinc-700 rounded cursor-pointer transition-colors text-zinc-300" title="Upravit">
+                            <Edit3 className="w-3 h-3" />
+                          </button>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); const marker = markerRefs.current[loc.id]; if (marker) marker.closePopup(); if (onDeleteLocation) onDeleteLocation(loc.id) }} className="p-1 hover:text-red-400 bg-zinc-800/80 hover:bg-zinc-700 rounded cursor-pointer transition-colors text-zinc-300" title="Smazat">
+                            <Trash2 className="w-3 h-3" />
+                          </button>
                         </div>
                       </div>
-                    </div>
+                      
+                      <p className="text-[11px] text-zinc-400 mb-1.5 leading-snug m-0">{loc.adresa}</p>
+                      
+                      <div className="flex flex-wrap items-center gap-1 mb-2">
+                        {loc.kdy_chci && (
+                          <span className="px-1.5 py-0.5 bg-purple-900/40 text-purple-300 text-[9px] uppercase font-bold rounded border border-purple-700/50">
+                            Termín: {formatDate(loc.kdy_chci)}
+                          </span>
+                        )}
+                        {loc.kontaktni_osoba && (
+                          <span className="px-1.5 py-0.5 bg-blue-900/40 text-blue-300 text-[9px] uppercase font-bold rounded border border-blue-700/50">
+                            {loc.kontaktni_osoba}
+                          </span>
+                        )}
+                        {loc.kontaktni_telefon && (
+                          <a href={`tel:${loc.kontaktni_telefon}`} onClick={(e) => e.stopPropagation()} className="px-1.5 py-0.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 hover:text-emerald-200 text-[9px] font-bold rounded border border-emerald-600/70 flex items-center gap-1 cursor-pointer transition-colors shadow-sm" style={{ color: '#6ee7b7' }}>
+                            <Phone className="w-2.5 h-2.5" style={{ color: '#6ee7b7' }} />
+                            <span style={{ color: '#6ee7b7' }}>{loc.kontaktni_telefon}</span>
+                          </a>
+                        )}
+                        {loc.konec_smlouvy && (
+                          <span className="px-1.5 py-0.5 bg-amber-950/60 text-amber-300 text-[9px] uppercase font-bold rounded border border-amber-700/60">
+                            Konec smlouvy: {formatDate(loc.konec_smlouvy)}
+                          </span>
+                        )}
+                        {loc.konec_hwb && (
+                          <span className="px-1.5 py-0.5 bg-cyan-950/60 text-cyan-300 text-[9px] uppercase font-bold rounded border border-cyan-700/60">
+                            Konec HWB: {formatDate(loc.konec_hwb)}
+                          </span>
+                        )}
+                      </div>
 
+                      {loc.co_chci && (
+                        <div className="my-2 p-2 bg-gradient-to-r from-purple-950/70 via-indigo-950/60 to-purple-950/70 border border-purple-500/60 rounded-lg shadow-[0_0_12px_rgba(168,85,247,0.2)]">
+                          <div className="text-[9px] uppercase tracking-wider font-extrabold text-purple-300 flex items-center gap-1 mb-0.5"><span>🎯</span> Co chci:</div>
+                          <p className="text-[11px] font-medium text-white leading-snug m-0">{loc.co_chci}</p>
+                        </div>
+                      )}
+
+                      <div className="pt-1.5 border-t border-zinc-800/60 flex justify-between items-center">
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setExpandedPopupId(isExpanded ? null : loc.id) }} className="text-[10px] font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer transition-colors">
+                          <span>{isExpanded ? 'Zobrazit méně' : 'Zobrazit více'}</span>
+                          <ChevronDown className={`w-3 h-3 transition-transform duration-300 ease-in-out ${isExpanded ? 'rotate-180' : 'rotate-0'}`} />
+                        </button>
+                      </div>
+
+                      <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100 mt-2.5' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'}`}>
+                        <div className="overflow-hidden">
+                          <div className="pt-2 border-t border-zinc-800/80 space-y-1.5 text-[11px] text-zinc-300 max-h-48 overflow-y-auto custom-scrollbar">
+                            {loc.ic_rc && <div><span className="text-zinc-500 font-semibold">IČ/RČ:</span> {loc.ic_rc}</div>}
+                            {loc.firma && <div><span className="text-zinc-500 font-semibold">Firma:</span> {loc.firma}</div>}
+                            {loc.sleva && <div><span className="text-zinc-500 font-semibold">% Sleva:</span> {loc.sleva}%</div>}
+                            {loc.hwb && <div><span className="text-zinc-500 font-semibold">HWB:</span> {loc.hwb}</div>}
+                            {loc.co_jsem_delal && <div><span className="text-zinc-500 font-semibold">Co jsem dělal:</span> {loc.co_jsem_delal}</div>}
+                            {loc.kdy_delal && <div><span className="text-zinc-500 font-semibold">Kdy dělal:</span> {formatDate(loc.kdy_delal)}</div>}
+                            {loc.moje_poznamky && <div><span className="text-zinc-500 font-semibold">Rychlá poznámka:</span> {loc.moje_poznamky}</div>}
+                            {loc.moje_fotka && <div className="mt-2"><img src={loc.moje_fotka} alt="Fotka" className="w-full h-28 object-cover rounded-lg border border-zinc-800 shadow-md" /></div>}
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
                   </div>
+
+                  {/* Samostatné plovoucí okno pro rozsáhlou poznámku vpravo vedle popupu */}
+                  {hasExtendedNote && (
+                    <div className="absolute left-[calc(100%+10px)] top-0 z-20">
+                      <LocationNoteWindow
+                        locationId={loc.id}
+                        initialNote={loc.rozsahla_poznamka}
+                        onSaveNote={onUpdateNote}
+                        onClosePopup={() => {
+                          const p = popupRefs.current[loc.id]
+                          if (p) p.close()
+                        }}
+                        getPopupInstance={() => popupRefs.current[loc.id] || null}
+                      />
+                    </div>
+                  )}
+
                 </div>
               </Popup>
             </Marker>
